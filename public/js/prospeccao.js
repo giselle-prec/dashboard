@@ -203,10 +203,12 @@
         });
 
         // anychart.bar() = barras horizontais: categorias (status/consultora)
-        // nas linhas (eixo Y), valores nas colunas (eixo X).
+        // nas linhas, valores nas colunas. No AnyChart, xAxis()/yAxis() seguem
+        // o papel do dado (categoria/valor), não a posição visual — então o
+        // eixo de valores continua sendo yAxis() mesmo com o gráfico deitado.
         var chart = anychart.bar(dados);
         chart.title(tituloBase + (agrupadoPorConsultora ? ' por Consultora' : ' por Status'));
-        chart.xAxis().labels().format(function () {
+        chart.yAxis().labels().format(function () {
             return formatarMoeda(this.value);
         });
         chart.tooltip().format(tooltipValorEQtd);
