@@ -155,41 +155,51 @@
         });
     }
 
+    // Formata o rótulo/tooltip padrão dos gráficos: valor em R$ + quantidade
+    // de precatórios (lida do campo `qtd` anexado a cada ponto de dado).
+    function tooltipValorEQtd() {
+        return formatarMoeda(this.value) + '\n' + formatarInteiro(this.getData('qtd')) + ' precatórios';
+    }
+
+    function labelNomeEQtd() {
+        return this.x + ' (' + formatarInteiro(this.getData('qtd')) + ')';
+    }
+
     function atualizarGraficoResumo(resumo) {
         if (chartResumo) {
             chartResumo.dispose();
         }
         var dados = [
-            { x: 'Prospectados', value: resumo.valor_prospectados },
-            { x: 'Pendente c/ Requisitório', value: resumo.valor_pendente_com_req },
-            { x: 'Pendente s/ Requisitório', value: resumo.valor_pendente_sem_req }
+            { x: 'Prospectados', value: resumo.valor_prospectados, qtd: resumo.qtd_prospectados },
+            { x: 'Pendente c/ Requisitório', value: resumo.valor_pendente_com_req, qtd: resumo.qtd_pendente_com_req },
+            { x: 'Pendente s/ Requisitório', value: resumo.valor_pendente_sem_req, qtd: resumo.qtd_pendente_sem_req }
         ];
         chartResumo = anychart.pie(dados);
         chartResumo.title('Distribuição de Valor (Prospecção)');
-        chartResumo.tooltip().format(function () {
-            return formatarMoeda(this.value);
-        });
+        chartResumo.labels().format(labelNomeEQtd);
+        chartResumo.tooltip().format(tooltipValorEQtd);
         chartResumo.container('chart-resumo');
         chartResumo.draw();
     }
 
-    // Gera um gráfico de colunas agregando `campoValor` por StatusPrec (ou por
-    // consultora, quando agrupado). Reaproveitado tanto para o valor total
-    // quanto para o valor das "melhores negociações".
-    function desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, campoValor, tituloBase, containerId) {
+    // Gera um gráfico de colunas agregando `campoValor`/`campoQtd` por
+    // StatusPrec (ou por consultora, quando agrupado). Reaproveitado tanto
+    // para o valor total quanto para o valor das "melhores negociações".
+    function desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, campoValor, campoQtd, tituloBase, containerId) {
         var agregados = {};
         var chave = agrupadoPorConsultora ? 'FirstName' : 'StatusPrec';
 
         detalhe.forEach(function (linha) {
             var rotulo = linha[chave] || '(não informado)';
             if (!agregados[rotulo]) {
-                agregados[rotulo] = 0;
+                agregados[rotulo] = { valor: 0, qtd: 0 };
             }
-            agregados[rotulo] += Number(linha[campoValor]) || 0;
+            agregados[rotulo].valor += Number(linha[campoValor]) || 0;
+            agregados[rotulo].qtd += Number(linha[campoQtd]) || 0;
         });
 
         var dados = Object.keys(agregados).map(function (rotulo) {
-            return { x: rotulo, value: agregados[rotulo] };
+            return { x: rotulo, value: agregados[rotulo].valor, qtd: agregados[rotulo].qtd };
         });
 
         var chart = anychart.column(dados);
@@ -197,8 +207,9 @@
         chart.yAxis().labels().format(function () {
             return formatarMoeda(this.value);
         });
-        chart.tooltip().format(function () {
-            return formatarMoeda(this.value);
+        chart.tooltip().format(tooltipValorEQtd);
+        chart.labels().enabled(true).format(function () {
+            return formatarInteiro(this.getData('qtd'));
         });
         chart.container(containerId);
         chart.draw();
@@ -209,7 +220,7 @@
         if (chartStatus) {
             chartStatus.dispose();
         }
-        chartStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorTotal', 'Valor Total', 'chart-status');
+        chartStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorTotal', 'QuantidadeTotal', 'Valor Total', 'chart-status');
     }
 
     function atualizarGraficoMelhoresResumo(detalhe) {
@@ -219,20 +230,23 @@
 
         var valorComReq = 0;
         var valorSemReq = 0;
+        var qtdComReq = 0;
+        var qtdSemReq = 0;
         detalhe.forEach(function (linha) {
             valorComReq += Number(linha.ValorMelhoresComReq) || 0;
             valorSemReq += Number(linha.ValorMelhoresSemReq) || 0;
+            qtdComReq += Number(linha.QtdMelhoresComReq) || 0;
+            qtdSemReq += Number(linha.QtdMelhoresSemReq) || 0;
         });
 
         var dados = [
-            { x: 'Melhores c/ Requisitório', value: valorComReq },
-            { x: 'Melhores s/ Requisitório', value: valorSemReq }
+            { x: 'Melhores c/ Requisitório', value: valorComReq, qtd: qtdComReq },
+            { x: 'Melhores s/ Requisitório', value: valorSemReq, qtd: qtdSemReq }
         ];
         chartMelhoresResumo = anychart.pie(dados);
         chartMelhoresResumo.title('Distribuição de Valor (Melhores Negociações)');
-        chartMelhoresResumo.tooltip().format(function () {
-            return formatarMoeda(this.value);
-        });
+        chartMelhoresResumo.labels().format(labelNomeEQtd);
+        chartMelhoresResumo.tooltip().format(tooltipValorEQtd);
         chartMelhoresResumo.container('chart-melhores-resumo');
         chartMelhoresResumo.draw();
     }
@@ -241,7 +255,7 @@
         if (chartMelhoresStatus) {
             chartMelhoresStatus.dispose();
         }
-        chartMelhoresStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorMelhores', 'Valor Melhores', 'chart-melhores-status');
+        chartMelhoresStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorMelhores', 'QtdMelhores', 'Valor Melhores', 'chart-melhores-status');
     }
 
     function carregarDados() {
