@@ -3,6 +3,7 @@
 
     var moedaFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
     var inteiroFormatter = new Intl.NumberFormat('pt-BR');
+    var STATUS_ID_PENDENTE = 65;
 
     var tabela = null;
     var chartResumo = null;
@@ -49,6 +50,52 @@
 
         $('#card-pendente-sem-qtd').text(formatarInteiro(resumo.qtd_pendente_sem_req) + ' precatórios');
         $('#card-pendente-sem-valor').text(formatarMoeda(resumo.valor_pendente_sem_req));
+    }
+
+    // Espelha atualizarCards(), mas usando os campos "Melhores" (já filtrados
+    // por previsão de pagamento e valor mínimo) agregados a partir do detalhe.
+    function calcularResumoMelhores(detalhe) {
+        var resumo = {
+            qtd_total: 0, valor_total: 0,
+            qtd_prospectados: 0, valor_prospectados: 0,
+            qtd_pendente_com_req: 0, valor_pendente_com_req: 0,
+            qtd_pendente_sem_req: 0, valor_pendente_sem_req: 0
+        };
+
+        detalhe.forEach(function (linha) {
+            var qtdMelhores = Number(linha.QtdMelhores) || 0;
+            var valorMelhores = Number(linha.ValorMelhores) || 0;
+            resumo.qtd_total += qtdMelhores;
+            resumo.valor_total += valorMelhores;
+
+            if (Number(linha.StatusId) === STATUS_ID_PENDENTE) {
+                resumo.qtd_pendente_com_req += Number(linha.QtdMelhoresComReq) || 0;
+                resumo.valor_pendente_com_req += Number(linha.ValorMelhoresComReq) || 0;
+                resumo.qtd_pendente_sem_req += Number(linha.QtdMelhoresSemReq) || 0;
+                resumo.valor_pendente_sem_req += Number(linha.ValorMelhoresSemReq) || 0;
+            } else {
+                resumo.qtd_prospectados += qtdMelhores;
+                resumo.valor_prospectados += valorMelhores;
+            }
+        });
+
+        return resumo;
+    }
+
+    function atualizarCardsMelhores(detalhe) {
+        var resumo = calcularResumoMelhores(detalhe);
+
+        $('#card-melhores-total-qtd').text(formatarInteiro(resumo.qtd_total) + ' precatórios');
+        $('#card-melhores-total-valor').text(formatarMoeda(resumo.valor_total));
+
+        $('#card-melhores-prospectados-qtd').text(formatarInteiro(resumo.qtd_prospectados) + ' precatórios');
+        $('#card-melhores-prospectados-valor').text(formatarMoeda(resumo.valor_prospectados));
+
+        $('#card-melhores-pendente-com-qtd').text(formatarInteiro(resumo.qtd_pendente_com_req) + ' precatórios');
+        $('#card-melhores-pendente-com-valor').text(formatarMoeda(resumo.valor_pendente_com_req));
+
+        $('#card-melhores-pendente-sem-qtd').text(formatarInteiro(resumo.qtd_pendente_sem_req) + ' precatórios');
+        $('#card-melhores-pendente-sem-valor').text(formatarMoeda(resumo.valor_pendente_sem_req));
     }
 
     function colunasTabela(agrupadoPorConsultora) {
@@ -208,6 +255,7 @@
                     return;
                 }
                 atualizarCards(resposta.resumo);
+                atualizarCardsMelhores(resposta.detalhe);
                 atualizarTabela(resposta.detalhe, resposta.agrupado_por_consultora);
                 atualizarGraficoResumo(resposta.resumo);
                 atualizarGraficoStatus(resposta.detalhe, resposta.agrupado_por_consultora);

@@ -108,6 +108,45 @@
     </div>
 
     <h4>Melhores Negociações <small class="text-muted">(com filtro de previsão de pagamento e valor mínimo)</small></h4>
+    <div class="row g-3 mb-4" id="cards-melhores">
+        <div class="col-md-3">
+            <div class="card text-bg-secondary h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Total de Precatórios</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-total-qtd">-</p>
+                    <p class="card-text" id="card-melhores-total-valor">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-success h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Prospectados</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-prospectados-qtd">-</p>
+                    <p class="card-text" id="card-melhores-prospectados-valor">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-warning h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Pendentes c/ Requisitório</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-pendente-com-qtd">-</p>
+                    <p class="card-text" id="card-melhores-pendente-com-valor">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-danger h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Pendentes s/ Requisitório</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-pendente-sem-qtd">-</p>
+                    <p class="card-text" id="card-melhores-pendente-sem-valor">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row g-3 mb-4">
         <div class="col-md-6">
             <div id="chart-melhores-resumo" style="height: 350px;"></div>
