@@ -1,0 +1,18 @@
+.form-check{
+    margin-top: 10px !important;
+}
+
+.check_boxes{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    
+    fieldset>label{
+            margin-top: 10px;
+            font-weight: bold;
+    }
+}
+.text_inputs{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 20px;
+}
