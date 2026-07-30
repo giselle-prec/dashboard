@@ -20,6 +20,7 @@
         return {
             ente_id: $('#ente_id').val(),
             orcamento: $('#orcamento').val(),
+            natureza_id: $('#natureza_id').val(),
             data_max: $('#data_max').val(),
             valor_min: $('#valor_min').val(),
             por_consultora: $('#por_consultora').is(':checked') ? 1 : 0

@@ -22,6 +22,7 @@ try {
     http_response_code(422);
     echo json_encode(['ok' => false, 'erro' => $e->getMessage()]);
 } catch (Throwable $e) {
+    error_log('prospeccao.php: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['ok' => false, 'erro' => 'Erro ao consultar os dados.']);
 }

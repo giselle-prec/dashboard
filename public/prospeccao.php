@@ -1,8 +1,10 @@
 <?php
     require __DIR__ . '/../src/connection.php';
     require __DIR__ . '/../src/crud.php';
+    require __DIR__ . '/../src/prospeccao_repository.php';
 
     $read_ente = DBread($pdo, 'Ente', 'ORDER BY Ente');
+    $naturezas = prospeccao_listar_naturezas($pdo);
 
     $title = "Painel de Prospecção";
     require __DIR__ . '/templates/head.php';
@@ -27,7 +29,16 @@
         </div>
         <div class="col-md-2">
             <label for="orcamento" class="form-label">Orçamento</label>
-            <input type="number" class="form-control" id="orcamento" name="orcamento" value="<?php echo date('Y'); ?>" required>
+            <input type="number" class="form-control" id="orcamento" name="orcamento" placeholder="Todos">
+        </div>
+        <div class="col-md-2">
+            <label for="natureza_id" class="form-label">Natureza</label>
+            <select class="form-select" id="natureza_id" name="natureza_id">
+                <option value="" selected>Todas</option>
+                <?php foreach ($naturezas as $natureza): ?>
+                <option value="<?php echo htmlspecialchars($natureza); ?>"><?php echo htmlspecialchars($natureza); ?></option>
+                <?php endforeach; ?>
+            </select>
         </div>
         <div class="col-md-3">
             <label for="data_max" class="form-label">Previsão de Pagamento até</label>

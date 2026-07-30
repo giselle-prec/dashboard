@@ -4,7 +4,10 @@
 // Regras de negócio replicadas da query original fornecida:
 // - StatusId 66, 72, 74 e 75 são sempre excluídos do pipeline de prospecção.
 // - RequisitorioId 1 ou 3 (ou nulo) é considerado "sem requisitório".
-// - Orçamento aceita o ano informado OU o ano seguinte quando NaturezaId = 2.
+// - Quando um orçamento é informado, aceita o ano informado OU o ano seguinte
+//   quando NaturezaId = 2 (carry-over orçamentário). Sem orçamento informado,
+//   nenhum filtro de ano é aplicado (todos os orçamentos).
+// - Natureza (NaturezaId) é um filtro independente e opcional.
 // - "Pendente de prospecção" = StatusPrec = 'Sem Tentativa'.
 
 const PROSPECCAO_STATUS_EXCLUIDOS = ['66', '72', '74', '75'];
@@ -17,7 +20,11 @@ function prospeccao_sanitize_ente_id($raw) {
     return (int)$raw;
 }
 
+// Orçamento é opcional: string vazia/ausente = sem filtro (todos os orçamentos).
 function prospeccao_sanitize_orcamento($raw) {
+    if ($raw === null || $raw === '') {
+        return null;
+    }
     if (!ctype_digit((string)$raw)) {
         throw new InvalidArgumentException('Orçamento inválido.');
     }
@@ -26,6 +33,17 @@ function prospeccao_sanitize_orcamento($raw) {
         throw new InvalidArgumentException('Orçamento fora do intervalo permitido.');
     }
     return $ano;
+}
+
+// Natureza também é opcional: string vazia/ausente = sem filtro (todas as naturezas).
+function prospeccao_sanitize_natureza($raw) {
+    if ($raw === null || $raw === '') {
+        return null;
+    }
+    if (!ctype_digit((string)$raw)) {
+        throw new InvalidArgumentException('Natureza inválida.');
+    }
+    return (int)$raw;
 }
 
 function prospeccao_sanitize_data($raw) {
@@ -49,6 +67,7 @@ function prospeccao_parse_filtros(array $input) {
     return [
         'ente_id'        => prospeccao_sanitize_ente_id($input['ente_id'] ?? null),
         'orcamento'      => prospeccao_sanitize_orcamento($input['orcamento'] ?? null),
+        'natureza_id'    => prospeccao_sanitize_natureza($input['natureza_id'] ?? null),
         'data_max'       => prospeccao_sanitize_data($input['data_max'] ?? null),
         'valor_min'      => prospeccao_sanitize_valor_min($input['valor_min'] ?? null),
         'por_consultora' => !empty($input['por_consultora']),
@@ -59,24 +78,61 @@ function prospeccao_status_excluidos_placeholders() {
     return implode(',', array_fill(0, count(PROSPECCAO_STATUS_EXCLUIDOS), '?'));
 }
 
-// Painel geral: total do universo (todos os precatórios do ente/orçamento) +
+// Monta a cláusula WHERE comum (ente, pipeline de prospecção, orçamento e natureza)
+// e devolve, por referência, os parâmetros na mesma ordem dos "?" gerados.
+function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
+    $params = [$filtros['ente_id']];
+    $clausulas = ['ente_id = ?'];
+
+    if ($incluirPipeline) {
+        $clausulas[] = 'StatusId NOT IN (' . prospeccao_status_excluidos_placeholders() . ')';
+        foreach (PROSPECCAO_STATUS_EXCLUIDOS as $statusId) {
+            $params[] = $statusId;
+        }
+        $clausulas[] = 'prec_pg IS NULL';
+    }
+
+    if ($filtros['orcamento'] !== null) {
+        $clausulas[] = "(Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))";
+        $params[] = $filtros['orcamento'];
+        $params[] = $filtros['orcamento'] + 1;
+    }
+
+    if ($filtros['natureza_id'] !== null) {
+        $clausulas[] = 'NaturezaId = ?';
+        $params[] = $filtros['natureza_id'];
+    }
+
+    return implode("\n          AND ", $clausulas);
+}
+
+// Naturezas distintas existentes na base, para popular o filtro do formulário.
+function prospeccao_listar_naturezas(PDO $pdo) {
+    $stmt = $pdo->query("
+        SELECT DISTINCT NaturezaId
+        FROM precappapp.precatoriodetalhe
+        WHERE NaturezaId IS NOT NULL
+        ORDER BY NaturezaId
+    ");
+    return $stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
+// Painel geral: total do universo (todos os precatórios do ente/orçamento/natureza) +
 // quebra do pipeline de prospecção (prospectados / pendentes com e sem requisitório).
 function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
-    $orcamentoProximo = $filtros['orcamento'] + 1;
-
+    $whereTotal = prospeccao_build_where($filtros, false, $paramsTotal);
     $sqlTotal = "
         SELECT
             COUNT(Precatorio) AS QtdTotal,
             COALESCE(SUM(CAST(ValorPrec AS DECIMAL(15,2))), 0) AS ValorTotal
         FROM precappapp.precatoriodetalhe
-        WHERE ente_id = ?
-          AND (Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))
+        WHERE {$whereTotal}
     ";
     $stmt = $pdo->prepare($sqlTotal);
-    $stmt->execute([$filtros['ente_id'], $filtros['orcamento'], $orcamentoProximo]);
+    $stmt->execute($paramsTotal);
     $total = $stmt->fetch();
 
-    $statusPlaceholders = prospeccao_status_excluidos_placeholders();
+    $wherePipeline = prospeccao_build_where($filtros, true, $paramsPipeline);
     $sqlPipeline = "
         SELECT
             SUM(CASE WHEN StatusPrec <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
@@ -86,16 +142,11 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
             SUM(CASE WHEN StatusPrec = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
             SUM(CASE WHEN StatusPrec = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteSemReq
         FROM precappapp.precatoriodetalhe
-        WHERE ente_id = ?
-          AND StatusId NOT IN ({$statusPlaceholders})
-          AND prec_pg IS NULL
-          AND (Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))
+        WHERE {$wherePipeline}
     ";
     $params = array_merge(
-        [PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE],
-        [$filtros['ente_id']],
-        PROSPECCAO_STATUS_EXCLUIDOS,
-        [$filtros['orcamento'], $orcamentoProximo]
+        array_fill(0, 6, PROSPECCAO_STATUS_PENDENTE),
+        $paramsPipeline
     );
     $stmt = $pdo->prepare($sqlPipeline);
     $stmt->execute($params);
@@ -114,16 +165,18 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
 }
 
 // Detalhe por StatusPrec (e opcionalmente por consultora/FirstName), equivalente à
-// query original fornecida, com filtros de ente/orçamento/data/valor mínimo.
+// query original fornecida, com filtros de ente/orçamento/natureza/data/valor mínimo.
 function prospeccao_detalhe(PDO $pdo, array $filtros) {
-    $orcamentoProximo = $filtros['orcamento'] + 1;
     $porConsultora = $filtros['por_consultora'];
 
     $selectConsultora = $porConsultora ? "FirstName,\n            " : '';
     $groupByConsultora = $porConsultora ? ', FirstName' : '';
     $orderByConsultora = $porConsultora ? ', FirstName' : '';
-    $statusPlaceholders = prospeccao_status_excluidos_placeholders();
+    $where = prospeccao_build_where($filtros, true, $whereParams);
 
+    // Ente e StatusId entram no GROUP BY (junto de StatusPrec) para funcionar
+    // tanto em servidores com sql_mode=ONLY_FULL_GROUP_BY quanto sem; não
+    // altera o resultado, já que ente_id é fixo no WHERE e StatusId é 1:1 com StatusPrec.
     $sql = "
         SELECT
             Ente,
@@ -142,20 +195,15 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
             SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
             SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresSemReq
         FROM precappapp.precatoriodetalhe
-        WHERE ente_id = ?
-          AND StatusId NOT IN ({$statusPlaceholders})
-          AND prec_pg IS NULL
-          AND (Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))
-        GROUP BY StatusPrec{$groupByConsultora}
+        WHERE {$where}
+        GROUP BY StatusPrec, StatusId, Ente{$groupByConsultora}
         ORDER BY StatusPrec DESC{$orderByConsultora}
     ";
 
     $melhoresPar = [$filtros['valor_min'], $filtros['data_max']];
     $params = array_merge(
         $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar,
-        [$filtros['ente_id']],
-        PROSPECCAO_STATUS_EXCLUIDOS,
-        [$filtros['orcamento'], $orcamentoProximo]
+        $whereParams
     );
 
     $stmt = $pdo->prepare($sql);
