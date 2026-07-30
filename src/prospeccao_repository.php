@@ -4,9 +4,9 @@
 // Regras de negócio replicadas da query original fornecida:
 // - StatusId 66, 72, 74 e 75 são sempre excluídos do pipeline de prospecção.
 // - RequisitorioId 1 ou 3 (ou nulo) é considerado "sem requisitório".
-// - Quando um orçamento é informado, aceita o ano informado OU o ano seguinte
-//   quando NaturezaId = 2 (carry-over orçamentário). Sem orçamento informado,
-//   nenhum filtro de ano é aplicado (todos os orçamentos).
+// - Quando um orçamento é informado, filtra exatamente o ano escolhido.
+//   Sem orçamento informado, nenhum filtro de ano é aplicado (todos os
+//   orçamentos).
 // - Natureza (NaturezaId) é um filtro independente e opcional.
 // - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
 // - prec_pg IS NULL AND Active = 1 (pendente de pagamento e ativo no sistema)
@@ -97,9 +97,8 @@ function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
     }
 
     if ($filtros['orcamento'] !== null) {
-        $clausulas[] = "(Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))";
+        $clausulas[] = 'Orcamento = ?';
         $params[] = $filtros['orcamento'];
-        $params[] = $filtros['orcamento'] + 1;
     }
 
     if ($filtros['natureza_id'] !== null) {
