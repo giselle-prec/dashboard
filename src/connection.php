@@ -1,6 +1,6 @@
 <?php
 
-$db_config_file = "config.ini";
+$db_config_file = __DIR__ . "/config.ini";
 $config = parse_ini_file($db_config_file);
 $dsn ="mysql:host={$config['host']};dbname={$config['db']};charset={$config['charset']};port={$config['port']}";
 
