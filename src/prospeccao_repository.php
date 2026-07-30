@@ -9,6 +9,7 @@
 //   nenhum filtro de ano é aplicado (todos os orçamentos).
 // - Natureza (NaturezaId) é um filtro independente e opcional.
 // - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
+// - "Pendente de pagamento e ativo no sistema" = prec_pg IS NULL AND Active = 1.
 
 const PROSPECCAO_STATUS_EXCLUIDOS = ['66', '72', '74', '75'];
 const PROSPECCAO_STATUS_ID_PENDENTE = '65';
@@ -89,7 +90,9 @@ function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
         foreach (PROSPECCAO_STATUS_EXCLUIDOS as $statusId) {
             $params[] = $statusId;
         }
+        // Pendente de pagamento e ativo no sistema.
         $clausulas[] = 'prec_pg IS NULL';
+        $clausulas[] = 'Active = 1';
     }
 
     if ($filtros['orcamento'] !== null) {
