@@ -9,7 +9,10 @@
 //   nenhum filtro de ano é aplicado (todos os orçamentos).
 // - Natureza (NaturezaId) é um filtro independente e opcional.
 // - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
-// - "Pendente de pagamento e ativo no sistema" = prec_pg IS NULL AND Active = 1.
+// - prec_pg IS NULL AND Active = 1 (pendente de pagamento e ativo no sistema)
+//   é aplicado em TODAS as consultas do painel, inclusive no "Total de
+//   Precatórios" — que portanto não é o universo bruto da tabela, e sim o
+//   total de precatórios ativos e pendentes de pagamento do ente/orçamento.
 
 const PROSPECCAO_STATUS_EXCLUIDOS = ['66', '72', '74', '75'];
 const PROSPECCAO_STATUS_ID_PENDENTE = '65';
@@ -83,16 +86,14 @@ function prospeccao_status_excluidos_placeholders() {
 // e devolve, por referência, os parâmetros na mesma ordem dos "?" gerados.
 function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
     $params = [$filtros['ente_id']];
-    $clausulas = ['ente_id = ?'];
+    // Pendente de pagamento e ativo no sistema: vale para todas as consultas do painel.
+    $clausulas = ['ente_id = ?', 'prec_pg IS NULL', 'Active = 1'];
 
     if ($incluirPipeline) {
         $clausulas[] = 'StatusId NOT IN (' . prospeccao_status_excluidos_placeholders() . ')';
         foreach (PROSPECCAO_STATUS_EXCLUIDOS as $statusId) {
             $params[] = $statusId;
         }
-        // Pendente de pagamento e ativo no sistema.
-        $clausulas[] = 'prec_pg IS NULL';
-        $clausulas[] = 'Active = 1';
     }
 
     if ($filtros['orcamento'] !== null) {
@@ -120,8 +121,9 @@ function prospeccao_listar_naturezas(PDO $pdo) {
     return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-// Painel geral: total do universo (todos os precatórios do ente/orçamento/natureza) +
-// quebra do pipeline de prospecção (prospectados / pendentes com e sem requisitório).
+// Painel geral: total de precatórios ativos e pendentes de pagamento do
+// ente/orçamento/natureza + quebra do pipeline de prospecção (prospectados /
+// pendentes com e sem requisitório, excluindo os StatusId já encerrados).
 function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
     $whereTotal = prospeccao_build_where($filtros, false, $paramsTotal);
     $sqlTotal = "
