@@ -202,9 +202,11 @@
             return { x: rotulo, value: agregados[rotulo].valor, qtd: agregados[rotulo].qtd };
         });
 
-        var chart = anychart.column(dados);
+        // anychart.bar() = barras horizontais: categorias (status/consultora)
+        // nas linhas (eixo Y), valores nas colunas (eixo X).
+        var chart = anychart.bar(dados);
         chart.title(tituloBase + (agrupadoPorConsultora ? ' por Consultora' : ' por Status'));
-        chart.yAxis().labels().format(function () {
+        chart.xAxis().labels().format(function () {
             return formatarMoeda(this.value);
         });
         chart.tooltip().format(tooltipValorEQtd);
