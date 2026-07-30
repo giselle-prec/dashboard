@@ -8,10 +8,10 @@
 //   quando NaturezaId = 2 (carry-over orçamentário). Sem orçamento informado,
 //   nenhum filtro de ano é aplicado (todos os orçamentos).
 // - Natureza (NaturezaId) é um filtro independente e opcional.
-// - "Pendente de prospecção" = StatusPrec = 'Sem Tentativa'.
+// - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
 
 const PROSPECCAO_STATUS_EXCLUIDOS = ['66', '72', '74', '75'];
-const PROSPECCAO_STATUS_PENDENTE = 'Sem Tentativa';
+const PROSPECCAO_STATUS_ID_PENDENTE = '65';
 
 function prospeccao_sanitize_ente_id($raw) {
     if (!is_numeric($raw) || (int)$raw <= 0) {
@@ -135,17 +135,17 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
     $wherePipeline = prospeccao_build_where($filtros, true, $paramsPipeline);
     $sqlPipeline = "
         SELECT
-            SUM(CASE WHEN StatusPrec <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
-            SUM(CASE WHEN StatusPrec <> ? THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorProspectados,
-            SUM(CASE WHEN StatusPrec = ? AND RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdPendenteComReq,
-            SUM(CASE WHEN StatusPrec = ? AND RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteComReq,
-            SUM(CASE WHEN StatusPrec = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
-            SUM(CASE WHEN StatusPrec = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteSemReq
+            SUM(CASE WHEN StatusId <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
+            SUM(CASE WHEN StatusId <> ? THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorProspectados,
+            SUM(CASE WHEN StatusId = ? AND RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdPendenteComReq,
+            SUM(CASE WHEN StatusId = ? AND RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteComReq,
+            SUM(CASE WHEN StatusId = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
+            SUM(CASE WHEN StatusId = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteSemReq
         FROM precappapp.precatoriodetalhe
         WHERE {$wherePipeline}
     ";
     $params = array_merge(
-        array_fill(0, 6, PROSPECCAO_STATUS_PENDENTE),
+        array_fill(0, 6, PROSPECCAO_STATUS_ID_PENDENTE),
         $paramsPipeline
     );
     $stmt = $pdo->prepare($sqlPipeline);

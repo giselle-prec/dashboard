@@ -107,6 +107,16 @@
         </div>
     </div>
 
+    <h4>Melhores Negociações <small class="text-muted">(com filtro de previsão de pagamento e valor mínimo)</small></h4>
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div id="chart-melhores-resumo" style="height: 350px;"></div>
+        </div>
+        <div class="col-md-6">
+            <div id="chart-melhores-status" style="height: 350px;"></div>
+        </div>
+    </div>
+
     <table id="tabela-detalhe" class="table table-striped table-bordered w-100">
         <thead></thead>
         <tbody></tbody>

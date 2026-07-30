@@ -7,6 +7,8 @@
     var tabela = null;
     var chartResumo = null;
     var chartStatus = null;
+    var chartMelhoresResumo = null;
+    var chartMelhoresStatus = null;
 
     function formatarMoeda(valor) {
         return moedaFormatter.format(Number(valor) || 0);
@@ -124,11 +126,10 @@
         chartResumo.draw();
     }
 
-    function atualizarGraficoStatus(detalhe, agrupadoPorConsultora) {
-        if (chartStatus) {
-            chartStatus.dispose();
-        }
-
+    // Gera um gráfico de colunas agregando `campoValor` por StatusPrec (ou por
+    // consultora, quando agrupado). Reaproveitado tanto para o valor total
+    // quanto para o valor das "melhores negociações".
+    function desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, campoValor, tituloBase, containerId) {
         var agregados = {};
         var chave = agrupadoPorConsultora ? 'FirstName' : 'StatusPrec';
 
@@ -137,23 +138,63 @@
             if (!agregados[rotulo]) {
                 agregados[rotulo] = 0;
             }
-            agregados[rotulo] += Number(linha.ValorTotal) || 0;
+            agregados[rotulo] += Number(linha[campoValor]) || 0;
         });
 
         var dados = Object.keys(agregados).map(function (rotulo) {
             return { x: rotulo, value: agregados[rotulo] };
         });
 
-        chartStatus = anychart.column(dados);
-        chartStatus.title(agrupadoPorConsultora ? 'Valor Total por Consultora' : 'Valor Total por Status');
-        chartStatus.yAxis().labels().format(function () {
+        var chart = anychart.column(dados);
+        chart.title(tituloBase + (agrupadoPorConsultora ? ' por Consultora' : ' por Status'));
+        chart.yAxis().labels().format(function () {
             return formatarMoeda(this.value);
         });
-        chartStatus.tooltip().format(function () {
+        chart.tooltip().format(function () {
             return formatarMoeda(this.value);
         });
-        chartStatus.container('chart-status');
-        chartStatus.draw();
+        chart.container(containerId);
+        chart.draw();
+        return chart;
+    }
+
+    function atualizarGraficoStatus(detalhe, agrupadoPorConsultora) {
+        if (chartStatus) {
+            chartStatus.dispose();
+        }
+        chartStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorTotal', 'Valor Total', 'chart-status');
+    }
+
+    function atualizarGraficoMelhoresResumo(detalhe) {
+        if (chartMelhoresResumo) {
+            chartMelhoresResumo.dispose();
+        }
+
+        var valorComReq = 0;
+        var valorSemReq = 0;
+        detalhe.forEach(function (linha) {
+            valorComReq += Number(linha.ValorMelhoresComReq) || 0;
+            valorSemReq += Number(linha.ValorMelhoresSemReq) || 0;
+        });
+
+        var dados = [
+            { x: 'Melhores c/ Requisitório', value: valorComReq },
+            { x: 'Melhores s/ Requisitório', value: valorSemReq }
+        ];
+        chartMelhoresResumo = anychart.pie(dados);
+        chartMelhoresResumo.title('Distribuição de Valor (Melhores Negociações)');
+        chartMelhoresResumo.tooltip().format(function () {
+            return formatarMoeda(this.value);
+        });
+        chartMelhoresResumo.container('chart-melhores-resumo');
+        chartMelhoresResumo.draw();
+    }
+
+    function atualizarGraficoMelhoresStatus(detalhe, agrupadoPorConsultora) {
+        if (chartMelhoresStatus) {
+            chartMelhoresStatus.dispose();
+        }
+        chartMelhoresStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorMelhores', 'Valor Melhores', 'chart-melhores-status');
     }
 
     function carregarDados() {
@@ -170,6 +211,8 @@
                 atualizarTabela(resposta.detalhe, resposta.agrupado_por_consultora);
                 atualizarGraficoResumo(resposta.resumo);
                 atualizarGraficoStatus(resposta.detalhe, resposta.agrupado_por_consultora);
+                atualizarGraficoMelhoresResumo(resposta.detalhe);
+                atualizarGraficoMelhoresStatus(resposta.detalhe, resposta.agrupado_por_consultora);
             })
             .fail(function (xhr) {
                 var mensagem = 'Não foi possível carregar os dados.';
