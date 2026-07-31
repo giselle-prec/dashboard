@@ -15,6 +15,16 @@
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
+<style>
+    /* Com muitos itens selecionados o Select2 (modo "tags") cresce sem
+       limite de altura; trava numa altura fixa com rolagem interna para
+       não empurrar o resto da página para baixo. */
+    .select2-container .select2-selection--multiple {
+        max-height: 140px;
+        overflow-y: auto;
+    }
+</style>
+
 <div class="container-fluid" style="max-width: 1400px;">
     <h2>Painel de Prospecção</h2>
 
