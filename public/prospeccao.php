@@ -111,29 +111,25 @@
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-md-6" id="col-chart-resumo">
+    <!-- Esta linha some por completo no modo "Detalhe por Consultora" (tem
+         sua própria versão mais abaixo, filtrada para a pessoa selecionada) -->
+    <div class="row g-3 mb-4" id="linha-graficos-geral">
+        <div class="col-md-6">
             <div id="chart-resumo" style="height: 350px;"></div>
+            <div id="chart-consultora-empilhado" style="height: 450px;" class="d-none"></div>
         </div>
-        <div class="col-md-6" id="col-chart-status">
+        <div class="col-md-6">
             <div id="chart-status" style="height: 350px;"></div>
         </div>
     </div>
 
-    <!-- Agrupado por consultora + Visão Geral: desempenho de todas as consultoras -->
-    <div id="secao-consultora-geral" class="d-none">
-        <div class="row g-3 mb-4">
-            <div class="col-12">
-                <table id="tabela-consultora-resumo" class="table table-striped table-bordered w-100">
-                    <thead></thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-        <div class="row g-3 mb-4">
-            <div class="col-12">
-                <div id="chart-consultora-empilhado" style="height: 450px;"></div>
-            </div>
+    <!-- Agrupado por consultora + Visão Geral: tabela-resumo de todas as consultoras -->
+    <div class="row g-3 mb-4 d-none" id="linha-tabela-consultora-geral">
+        <div class="col-12">
+            <table id="tabela-consultora-resumo" class="table table-striped table-bordered w-100">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
         </div>
     </div>
 
@@ -228,20 +224,24 @@
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-md-6" id="col-chart-melhores-resumo">
+    <!-- Esta linha some por completo no modo "Detalhe por Consultora" -->
+    <div class="row g-3 mb-4" id="linha-graficos-melhores">
+        <div class="col-md-6">
             <div id="chart-melhores-resumo" style="height: 350px;"></div>
+            <div id="chart-consultora-empilhado-melhores" style="height: 450px;" class="d-none"></div>
         </div>
-        <div class="col-md-6" id="col-chart-melhores-status">
+        <div class="col-md-6">
             <div id="chart-melhores-status" style="height: 350px;"></div>
         </div>
     </div>
 
-    <!-- Agrupado por consultora + Visão Geral: mesma tabela-resumo acima já
-         traz os números de melhores negociações; aqui só o empilhado por status -->
-    <div id="secao-consultora-geral-melhores" class="d-none row g-3 mb-4">
+    <!-- Agrupado por consultora + Visão Geral: tabela-resumo de melhores negociações -->
+    <div class="row g-3 mb-4 d-none" id="linha-tabela-consultora-melhores">
         <div class="col-12">
-            <div id="chart-consultora-empilhado-melhores" style="height: 450px;"></div>
+            <table id="tabela-consultora-resumo-melhores" class="table table-striped table-bordered w-100">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
         </div>
     </div>
 

@@ -6,7 +6,7 @@
     var STATUS_ID_PENDENTE = 65;
 
     var tabela = null;
-    var tabelaConsultora = null;
+    var tabelasConsultora = {};
     var charts = {};
 
     // Última resposta carregada — a troca de modo/consultora reaproveita
@@ -215,36 +215,40 @@
         });
     }
 
-    function atualizarTabelaConsultora(linhas) {
-        if (tabelaConsultora) {
-            tabelaConsultora.destroy();
-            $('#tabela-consultora-resumo').empty().append('<thead></thead><tbody></tbody>');
+    var COLUNAS_CONSULTORA_GERAL = [
+        { data: 'Consultora', title: 'Consultora' },
+        { data: 'QtdTotal', title: 'Qtd. Total' },
+        { data: 'ValorTotal', title: 'Valor Total', render: renderMoeda },
+        { data: 'QtdProspectados', title: 'Qtd. Prospectados' },
+        { data: 'ValorProspectados', title: 'Valor Prospectados', render: renderMoeda },
+        { data: 'QtdPendenteComReq', title: 'Qtd. Pendente c/ Req' },
+        { data: 'ValorPendenteComReq', title: 'Valor Pendente c/ Req', render: renderMoeda },
+        { data: 'QtdPendenteSemReq', title: 'Qtd. Pendente s/ Req' },
+        { data: 'ValorPendenteSemReq', title: 'Valor Pendente s/ Req', render: renderMoeda }
+    ];
+
+    var COLUNAS_CONSULTORA_MELHORES = [
+        { data: 'Consultora', title: 'Consultora' },
+        { data: 'QtdMelhores', title: 'Qtd. Melhores' },
+        { data: 'ValorMelhores', title: 'Valor Melhores', render: renderMoeda },
+        { data: 'QtdMelhoresProspectados', title: 'Qtd. Melhores Prospectados' },
+        { data: 'ValorMelhoresProspectados', title: 'Valor Melhores Prospectados', render: renderMoeda },
+        { data: 'QtdMelhoresPendenteComReq', title: 'Qtd. Melhores Pend. c/ Req' },
+        { data: 'ValorMelhoresPendenteComReq', title: 'Valor Melhores Pend. c/ Req', render: renderMoeda },
+        { data: 'QtdMelhoresPendenteSemReq', title: 'Qtd. Melhores Pend. s/ Req' },
+        { data: 'ValorMelhoresPendenteSemReq', title: 'Valor Melhores Pend. s/ Req', render: renderMoeda }
+    ];
+
+    function atualizarTabelaConsultora(containerId, linhas, colunas) {
+        if (tabelasConsultora[containerId]) {
+            tabelasConsultora[containerId].destroy();
+            $('#' + containerId).empty().append('<thead></thead><tbody></tbody>');
         }
 
-        var colunas = [
-            { data: 'Consultora', title: 'Consultora' },
-            { data: 'QtdTotal', title: 'Qtd. Total' },
-            { data: 'ValorTotal', title: 'Valor Total', render: renderMoeda },
-            { data: 'QtdProspectados', title: 'Qtd. Prospectados' },
-            { data: 'ValorProspectados', title: 'Valor Prospectados', render: renderMoeda },
-            { data: 'QtdPendenteComReq', title: 'Qtd. Pendente c/ Req' },
-            { data: 'ValorPendenteComReq', title: 'Valor Pendente c/ Req', render: renderMoeda },
-            { data: 'QtdPendenteSemReq', title: 'Qtd. Pendente s/ Req' },
-            { data: 'ValorPendenteSemReq', title: 'Valor Pendente s/ Req', render: renderMoeda },
-            { data: 'QtdMelhores', title: 'Qtd. Melhores' },
-            { data: 'ValorMelhores', title: 'Valor Melhores', render: renderMoeda },
-            { data: 'QtdMelhoresProspectados', title: 'Qtd. Melhores Prospectados' },
-            { data: 'ValorMelhoresProspectados', title: 'Valor Melhores Prospectados', render: renderMoeda },
-            { data: 'QtdMelhoresPendenteComReq', title: 'Qtd. Melhores Pend. c/ Req' },
-            { data: 'ValorMelhoresPendenteComReq', title: 'Valor Melhores Pend. c/ Req', render: renderMoeda },
-            { data: 'QtdMelhoresPendenteSemReq', title: 'Qtd. Melhores Pend. s/ Req' },
-            { data: 'ValorMelhoresPendenteSemReq', title: 'Valor Melhores Pend. s/ Req', render: renderMoeda }
-        ];
-
         var cabecalho = '<tr>' + colunas.map(function (c) { return '<th>' + c.title + '</th>'; }).join('') + '</tr>';
-        $('#tabela-consultora-resumo thead').html(cabecalho);
+        $('#' + containerId + ' thead').html(cabecalho);
 
-        tabelaConsultora = $('#tabela-consultora-resumo').DataTable({
+        tabelasConsultora[containerId] = $('#' + containerId).DataTable({
             data: linhas,
             columns: colunas,
             language: {
@@ -398,7 +402,9 @@
     // ---- Visão Geral por Consultora ----
 
     function atualizarSecaoConsultoraGeral() {
-        atualizarTabelaConsultora(calcularResumoPorConsultora(ultimoDetalhe));
+        var linhas = calcularResumoPorConsultora(ultimoDetalhe);
+        atualizarTabelaConsultora('tabela-consultora-resumo', linhas, COLUNAS_CONSULTORA_GERAL);
+        atualizarTabelaConsultora('tabela-consultora-resumo-melhores', linhas, COLUNAS_CONSULTORA_MELHORES);
         desenharGraficoEmpilhado(ultimoDetalhe, 'ValorTotal', 'Valor Total', 'chart-consultora-empilhado');
         desenharGraficoEmpilhado(ultimoDetalhe, 'ValorMelhores', 'Valor Melhores', 'chart-consultora-empilhado-melhores');
     }
@@ -462,14 +468,19 @@
         var mostrarGeral = agrupadoPorConsultora && modo === 'geral';
         var mostrarDetalhe = agrupadoPorConsultora && modo === 'detalhe';
 
-        // As pizzas (Prospectados/Pendentes) são por status, não por pessoa —
-        // somem quando agrupado; a barra por consultora ocupa a linha toda.
-        $('#col-chart-resumo, #col-chart-melhores-resumo').toggleClass('d-none', agrupadoPorConsultora);
-        $('#col-chart-status, #col-chart-melhores-status')
-            .toggleClass('col-md-6', !agrupadoPorConsultora)
-            .toggleClass('col-md-12', agrupadoPorConsultora);
+        // No modo Detalhe por Consultora, os cards e gráficos gerais (não
+        // filtrados por pessoa) somem por completo — só a seção dedicada,
+        // já escopada para a consultora escolhida, aparece.
+        $('#cards-resumo, #linha-graficos-geral, #cards-melhores, #linha-graficos-melhores')
+            .toggleClass('d-none', mostrarDetalhe);
 
-        $('#secao-consultora-geral, #secao-consultora-geral-melhores').toggleClass('d-none', !mostrarGeral);
+        // Dentro da linha de gráficos, a pizza (não agrupado) e o empilhado
+        // por status (agrupado + Visão Geral) revezam o mesmo espaço, ao
+        // lado da barra por consultora/status que já ocupava a outra metade.
+        $('#chart-resumo, #chart-melhores-resumo').toggleClass('d-none', agrupadoPorConsultora);
+        $('#chart-consultora-empilhado, #chart-consultora-empilhado-melhores').toggleClass('d-none', !mostrarGeral);
+
+        $('#linha-tabela-consultora-geral, #linha-tabela-consultora-melhores').toggleClass('d-none', !mostrarGeral);
         $('#secao-consultora-detalhe, #secao-consultora-detalhe-melhores').toggleClass('d-none', !mostrarDetalhe);
         $('#select-consultora-wrapper').toggleClass('d-none', !mostrarDetalhe);
     }
