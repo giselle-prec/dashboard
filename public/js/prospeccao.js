@@ -22,11 +22,14 @@
         return inteiroFormatter.format(Number(valor) || 0);
     }
 
+    // Ente/Orçamento/Natureza vão como uma string JSON cada um (não um campo
+    // por valor marcado): com "selecionar todos" isso pode passar de 1000
+    // valores, que é o limite padrão de max_input_vars do PHP por campo.
     function coletarFiltros() {
         return {
-            ente_id: $('#ente_id').val() || [],
-            orcamento: $('#orcamento').val() || [],
-            natureza_id: $('#natureza_id').val() || [],
+            ente_id: JSON.stringify($('#ente_id').val() || []),
+            orcamento: JSON.stringify($('#orcamento').val() || []),
+            natureza_id: JSON.stringify($('#natureza_id').val() || []),
             data_max: $('#data_max').val(),
             valor_min: $('#valor_min').val(),
             por_consultora: $('#por_consultora').is(':checked') ? 1 : 0
@@ -450,7 +453,12 @@
         limparErro();
         var filtros = coletarFiltros();
 
-        $.getJSON('api/prospeccao.php', filtros)
+        $.ajax({
+            url: 'api/prospeccao.php',
+            method: 'POST',
+            dataType: 'json',
+            data: filtros
+        })
             .done(function (resposta) {
                 if (!resposta.ok) {
                     mostrarErro(resposta.erro || 'Não foi possível carregar os dados.');

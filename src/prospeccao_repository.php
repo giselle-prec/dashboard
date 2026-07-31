@@ -20,10 +20,29 @@ function prospeccao_placeholders($quantidade) {
     return implode(',', array_fill(0, $quantidade, '?'));
 }
 
-// Aceita um valor único ou array (selects múltiplos sempre chegam como
-// array vindo do formulário). Devolve uma lista de inteiros positivos.
+// Um <select multiple> com milhares de opções marcadas (ex.: "selecionar
+// todos" os ~5.600 municípios) excede o max_input_vars do PHP se cada valor
+// vier como um campo POST separado (ente_id[]=1&ente_id[]=2&...) — o PHP
+// descarta os excedentes em silêncio. Por isso o front-end manda cada lista
+// como uma única string JSON; aqui aceitamos JSON, array (uso direto/testes)
+// ou valor único, sempre devolvendo uma lista plana.
+function prospeccao_normalizar_lista($raw) {
+    if (is_array($raw)) {
+        return $raw;
+    }
+    if ($raw === null || $raw === '') {
+        return [];
+    }
+    $decodificado = json_decode($raw, true);
+    if (is_array($decodificado)) {
+        return $decodificado;
+    }
+    return [$raw];
+}
+
+// Aceita um valor único, array ou string JSON. Devolve uma lista de inteiros positivos.
 function prospeccao_sanitize_ente_ids($raw) {
-    $valores = is_array($raw) ? $raw : (($raw === null || $raw === '') ? [] : [$raw]);
+    $valores = prospeccao_normalizar_lista($raw);
     $ids = [];
     foreach ($valores as $valor) {
         if ($valor === null || $valor === '') {
@@ -42,7 +61,7 @@ function prospeccao_sanitize_ente_ids($raw) {
 
 // Orçamento é opcional: nenhum valor selecionado = sem filtro (todos os orçamentos).
 function prospeccao_sanitize_orcamentos($raw) {
-    $valores = is_array($raw) ? $raw : (($raw === null || $raw === '') ? [] : [$raw]);
+    $valores = prospeccao_normalizar_lista($raw);
     $anos = [];
     foreach ($valores as $valor) {
         if ($valor === null || $valor === '') {
@@ -62,7 +81,7 @@ function prospeccao_sanitize_orcamentos($raw) {
 
 // Natureza também é opcional: nenhum valor selecionado = sem filtro (todas as naturezas).
 function prospeccao_sanitize_naturezas($raw) {
-    $valores = is_array($raw) ? $raw : (($raw === null || $raw === '') ? [] : [$raw]);
+    $valores = prospeccao_normalizar_lista($raw);
     $ids = [];
     foreach ($valores as $valor) {
         if ($valor === null || $valor === '') {
