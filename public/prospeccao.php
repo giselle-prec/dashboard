@@ -76,6 +76,15 @@
             <label for="valor_min" class="form-label">Valor Mínimo (R$)</label>
             <input type="number" step="0.01" min="0" class="form-control" id="valor_min" name="valor_min" value="100000" required>
         </div>
+        <div class="col-md-3">
+            <label class="form-label d-block">Valor considerado</label>
+            <div class="btn-group" role="group" aria-label="Campo de valor">
+                <input type="radio" class="btn-check" name="campo_valor" id="campo-valor-prec" value="ValorPrec" checked autocomplete="off">
+                <label class="btn btn-outline-secondary" for="campo-valor-prec">Valor do Precatório</label>
+                <input type="radio" class="btn-check" name="campo_valor" id="campo-valor-tj" value="vlr_atual_tj" autocomplete="off">
+                <label class="btn btn-outline-secondary" for="campo-valor-tj">Valor Atualizado do TJ</label>
+            </div>
+        </div>
         <div class="col-md-2 form-check ms-2">
             <input type="checkbox" class="form-check-input" id="por_consultora" name="por_consultora">
             <label class="form-check-label" for="por_consultora">Agrupar por consultora</label>
@@ -86,6 +95,8 @@
     </form>
 
     <div id="alerta-erro" class="alert alert-danger d-none" role="alert"></div>
+
+    <div id="info-ultimo-batch" class="alert alert-info d-none py-2" role="status"></div>
 
     <div id="opcoes-consultora" class="mb-3 d-none">
         <div class="btn-group" role="group" aria-label="Modo de visualização por consultora">

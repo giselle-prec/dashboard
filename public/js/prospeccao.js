@@ -32,6 +32,7 @@
             natureza_id: JSON.stringify($('#natureza_id').val() || []),
             data_max: $('#data_max').val(),
             valor_min: $('#valor_min').val(),
+            campo_valor: $('input[name="campo_valor"]:checked').val() || 'ValorPrec',
             por_consultora: $('#por_consultora').is(':checked') ? 1 : 0
         };
     }
@@ -42,6 +43,16 @@
 
     function limparErro() {
         $('#alerta-erro').addClass('d-none').text('');
+    }
+
+    function atualizarInfoUltimoBatch(ultimoBatch) {
+        if (!ultimoBatch) {
+            $('#info-ultimo-batch').addClass('d-none').text('');
+            return;
+        }
+        var ente = ultimoBatch.nome_ente || ultimoBatch.ente_id;
+        $('#info-ultimo-batch').removeClass('d-none')
+            .text('Último batch: ' + ultimoBatch.data_batch + ' (' + ente + ')');
     }
 
     function disposeChart(containerId) {
@@ -324,7 +335,9 @@
 
     function atualizarPainelPrincipal(resumo, detalhe, agrupadoPorConsultora) {
         preencherCards(resumo, 'card');
-        preencherCards(calcularResumoMelhores(detalhe), 'card-melhores');
+
+        var resumoMelhores = calcularResumoMelhores(detalhe);
+        preencherCards(resumoMelhores, 'card-melhores');
 
         desenharGraficoPizza([
             { x: 'Prospectados', value: resumo.valor_prospectados, qtd: resumo.qtd_prospectados },
@@ -334,16 +347,13 @@
 
         desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorTotal', 'QuantidadeTotal', 'Valor Total', 'chart-status');
 
-        var comReq = 0, semReq = 0, qtdCom = 0, qtdSem = 0;
-        detalhe.forEach(function (linha) {
-            comReq += Number(linha.ValorMelhoresComReq) || 0;
-            semReq += Number(linha.ValorMelhoresSemReq) || 0;
-            qtdCom += Number(linha.QtdMelhoresComReq) || 0;
-            qtdSem += Number(linha.QtdMelhoresSemReq) || 0;
-        });
+        // Mesma divisão de três do resumo geral (Prospectados/Pendente c/ e
+        // s/ Requisitório), só que com os valores já filtrados por previsão
+        // de pagamento e valor mínimo (calcularResumoMelhores).
         desenharGraficoPizza([
-            { x: 'Melhores c/ Requisitório', value: comReq, qtd: qtdCom },
-            { x: 'Melhores s/ Requisitório', value: semReq, qtd: qtdSem }
+            { x: 'Prospectados', value: resumoMelhores.valor_prospectados, qtd: resumoMelhores.qtd_prospectados },
+            { x: 'Pendente c/ Requisitório', value: resumoMelhores.valor_pendente_com_req, qtd: resumoMelhores.qtd_pendente_com_req },
+            { x: 'Pendente s/ Requisitório', value: resumoMelhores.valor_pendente_sem_req, qtd: resumoMelhores.qtd_pendente_sem_req }
         ], 'chart-melhores-resumo', 'Distribuição de Valor (Melhores Negociações)');
 
         desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorMelhores', 'QtdMelhores', 'Valor Melhores', 'chart-melhores-status');
@@ -391,16 +401,10 @@
         ], 'chart-consultora-resumo', 'Distribuição de Valor (Prospecção)' + (nome ? ' — ' + nome : ''));
         desenharGraficoPorStatus(subset, false, 'ValorTotal', 'QuantidadeTotal', 'Valor Total', 'chart-consultora-status');
 
-        var comReq = 0, semReq = 0, qtdCom = 0, qtdSem = 0;
-        subset.forEach(function (linha) {
-            comReq += Number(linha.ValorMelhoresComReq) || 0;
-            semReq += Number(linha.ValorMelhoresSemReq) || 0;
-            qtdCom += Number(linha.QtdMelhoresComReq) || 0;
-            qtdSem += Number(linha.QtdMelhoresSemReq) || 0;
-        });
         desenharGraficoPizza([
-            { x: 'Melhores c/ Requisitório', value: comReq, qtd: qtdCom },
-            { x: 'Melhores s/ Requisitório', value: semReq, qtd: qtdSem }
+            { x: 'Prospectados', value: melhores.valor_prospectados, qtd: melhores.qtd_prospectados },
+            { x: 'Pendente c/ Requisitório', value: melhores.valor_pendente_com_req, qtd: melhores.qtd_pendente_com_req },
+            { x: 'Pendente s/ Requisitório', value: melhores.valor_pendente_sem_req, qtd: melhores.qtd_pendente_sem_req }
         ], 'chart-consultora-melhores-resumo', 'Distribuição de Valor (Melhores Negociações)' + (nome ? ' — ' + nome : ''));
         desenharGraficoPorStatus(subset, false, 'ValorMelhores', 'QtdMelhores', 'Valor Melhores', 'chart-consultora-melhores-status');
     }
@@ -469,6 +473,7 @@
                 ultimoResumo = resposta.resumo;
                 ultimoAgrupado = resposta.agrupado_por_consultora;
 
+                atualizarInfoUltimoBatch(resposta.ultimo_batch);
                 atualizarPainelPrincipal(ultimoResumo, ultimoDetalhe, ultimoAgrupado);
                 atualizarVisibilidade(ultimoAgrupado);
 

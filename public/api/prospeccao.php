@@ -13,12 +13,14 @@ try {
 
     $resumo = prospeccao_resumo_geral($pdo, $filtros);
     $detalhe = prospeccao_detalhe($pdo, $filtros);
+    $ultimoBatch = prospeccao_ultimo_batch($pdo, $filtros['ente_ids']);
 
     echo json_encode([
         'ok'                  => true,
         'resumo'              => $resumo,
         'detalhe'             => $detalhe,
         'agrupado_por_consultora' => $filtros['por_consultora'],
+        'ultimo_batch'        => $ultimoBatch,
     ]);
 } catch (InvalidArgumentException $e) {
     http_response_code(422);
