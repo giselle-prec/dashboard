@@ -173,10 +173,22 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
 function prospeccao_detalhe(PDO $pdo, array $filtros) {
     $porConsultora = $filtros['por_consultora'];
 
-    $selectConsultora = $porConsultora ? "FirstName,\n            " : '';
-    $groupByConsultora = $porConsultora ? ', FirstName' : '';
-    $orderByConsultora = $porConsultora ? ', FirstName' : '';
+    // precatoriodetalhe.FirstName é qualificado explicitamente porque Usuario
+    // também tem uma coluna FirstName; sem o prefixo, o "SELECT FirstName"
+    // fica ambíguo assim que o JOIN com Usuario entra na consulta.
+    $selectConsultora = $porConsultora ? "precatoriodetalhe.FirstName,\n            " : '';
+    $groupByConsultora = $porConsultora ? ', precatoriodetalhe.FirstName' : '';
+    $orderByConsultora = $porConsultora ? ', precatoriodetalhe.FirstName' : '';
     $where = prospeccao_build_where($filtros, true, $whereParams);
+
+    // Consultoras relevantes são as com PerfilId = 2 na tabela Usuario
+    // (precatoriodetalhe.Negociador = Usuario.usuario_id). Só entra quando
+    // agrupado por consultora — não afeta o resumo geral (que não é por pessoa).
+    $joinUsuario = '';
+    if ($porConsultora) {
+        $joinUsuario = 'INNER JOIN precappapp.Usuario ON precatoriodetalhe.Negociador = Usuario.usuario_id';
+        $where .= "\n          AND Usuario.PerfilId = 2";
+    }
 
     // Ente e StatusId entram no GROUP BY (junto de StatusPrec) para funcionar
     // tanto em servidores com sql_mode=ONLY_FULL_GROUP_BY quanto sem; não
@@ -199,6 +211,7 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
             SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
             SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresSemReq
         FROM precappapp.precatoriodetalhe
+        {$joinUsuario}
         WHERE {$where}
         GROUP BY StatusPrec, StatusId, Ente{$groupByConsultora}
         ORDER BY StatusPrec DESC{$orderByConsultora}

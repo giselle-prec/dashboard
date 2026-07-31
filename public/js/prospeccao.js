@@ -6,10 +6,14 @@
     var STATUS_ID_PENDENTE = 65;
 
     var tabela = null;
-    var chartResumo = null;
-    var chartStatus = null;
-    var chartMelhoresResumo = null;
-    var chartMelhoresStatus = null;
+    var tabelaConsultora = null;
+    var charts = {};
+
+    // Última resposta carregada — a troca de modo/consultora reaproveita
+    // esses dados e recalcula tudo no navegador, sem nova requisição.
+    var ultimoDetalhe = [];
+    var ultimoResumo = null;
+    var ultimoAgrupado = false;
 
     function formatarMoeda(valor) {
         return moedaFormatter.format(Number(valor) || 0);
@@ -38,22 +42,48 @@
         $('#alerta-erro').addClass('d-none').text('');
     }
 
-    function atualizarCards(resumo) {
-        $('#card-total-qtd').text(formatarInteiro(resumo.qtd_total) + ' precatórios');
-        $('#card-total-valor').text(formatarMoeda(resumo.valor_total));
-
-        $('#card-prospectados-qtd').text(formatarInteiro(resumo.qtd_prospectados) + ' precatórios');
-        $('#card-prospectados-valor').text(formatarMoeda(resumo.valor_prospectados));
-
-        $('#card-pendente-com-qtd').text(formatarInteiro(resumo.qtd_pendente_com_req) + ' precatórios');
-        $('#card-pendente-com-valor').text(formatarMoeda(resumo.valor_pendente_com_req));
-
-        $('#card-pendente-sem-qtd').text(formatarInteiro(resumo.qtd_pendente_sem_req) + ' precatórios');
-        $('#card-pendente-sem-valor').text(formatarMoeda(resumo.valor_pendente_sem_req));
+    function disposeChart(containerId) {
+        if (charts[containerId]) {
+            charts[containerId].dispose();
+            delete charts[containerId];
+        }
     }
 
-    // Espelha atualizarCards(), mas usando os campos "Melhores" (já filtrados
-    // por previsão de pagamento e valor mínimo) agregados a partir do detalhe.
+    // ---- Cálculo de resumos a partir do detalhe (feito no navegador) ----
+
+    // Equivalente ao resumo geral do servidor (prospectados/pendentes com e
+    // sem requisitório), mas a partir de um subconjunto do detalhe — usado
+    // para o resumo por consultora e para o "Detalhe por Consultora".
+    function calcularResumoDeStatus(detalhe) {
+        var resumo = {
+            qtd_total: 0, valor_total: 0,
+            qtd_prospectados: 0, valor_prospectados: 0,
+            qtd_pendente_com_req: 0, valor_pendente_com_req: 0,
+            qtd_pendente_sem_req: 0, valor_pendente_sem_req: 0
+        };
+
+        detalhe.forEach(function (linha) {
+            var qtd = Number(linha.QuantidadeTotal) || 0;
+            var valor = Number(linha.ValorTotal) || 0;
+            resumo.qtd_total += qtd;
+            resumo.valor_total += valor;
+
+            if (Number(linha.StatusId) === STATUS_ID_PENDENTE) {
+                resumo.qtd_pendente_com_req += Number(linha.ComRequisitorio) || 0;
+                resumo.valor_pendente_com_req += Number(linha.ValorComRequisitorio) || 0;
+                resumo.qtd_pendente_sem_req += Number(linha.SemRequisitorio) || 0;
+                resumo.valor_pendente_sem_req += Number(linha.ValorSemRequisitorio) || 0;
+            } else {
+                resumo.qtd_prospectados += qtd;
+                resumo.valor_prospectados += valor;
+            }
+        });
+
+        return resumo;
+    }
+
+    // Espelha calcularResumoDeStatus(), mas usando os campos "Melhores" (já
+    // filtrados por previsão de pagamento e valor mínimo).
     function calcularResumoMelhores(detalhe) {
         var resumo = {
             qtd_total: 0, valor_total: 0,
@@ -82,21 +112,23 @@
         return resumo;
     }
 
-    function atualizarCardsMelhores(detalhe) {
-        var resumo = calcularResumoMelhores(detalhe);
+    // ---- Cards (genérico: prefixoId define o conjunto de elementos alvo) ----
 
-        $('#card-melhores-total-qtd').text(formatarInteiro(resumo.qtd_total) + ' precatórios');
-        $('#card-melhores-total-valor').text(formatarMoeda(resumo.valor_total));
+    function preencherCards(resumo, prefixoId) {
+        $('#' + prefixoId + '-total-qtd').text(formatarInteiro(resumo.qtd_total) + ' precatórios');
+        $('#' + prefixoId + '-total-valor').text(formatarMoeda(resumo.valor_total));
 
-        $('#card-melhores-prospectados-qtd').text(formatarInteiro(resumo.qtd_prospectados) + ' precatórios');
-        $('#card-melhores-prospectados-valor').text(formatarMoeda(resumo.valor_prospectados));
+        $('#' + prefixoId + '-prospectados-qtd').text(formatarInteiro(resumo.qtd_prospectados) + ' precatórios');
+        $('#' + prefixoId + '-prospectados-valor').text(formatarMoeda(resumo.valor_prospectados));
 
-        $('#card-melhores-pendente-com-qtd').text(formatarInteiro(resumo.qtd_pendente_com_req) + ' precatórios');
-        $('#card-melhores-pendente-com-valor').text(formatarMoeda(resumo.valor_pendente_com_req));
+        $('#' + prefixoId + '-pendente-com-qtd').text(formatarInteiro(resumo.qtd_pendente_com_req) + ' precatórios');
+        $('#' + prefixoId + '-pendente-com-valor').text(formatarMoeda(resumo.valor_pendente_com_req));
 
-        $('#card-melhores-pendente-sem-qtd').text(formatarInteiro(resumo.qtd_pendente_sem_req) + ' precatórios');
-        $('#card-melhores-pendente-sem-valor').text(formatarMoeda(resumo.valor_pendente_sem_req));
+        $('#' + prefixoId + '-pendente-sem-qtd').text(formatarInteiro(resumo.qtd_pendente_sem_req) + ' precatórios');
+        $('#' + prefixoId + '-pendente-sem-valor').text(formatarMoeda(resumo.valor_pendente_sem_req));
     }
+
+    // ---- Tabela detalhe (por status, opcionalmente por consultora) ----
 
     function colunasTabela(agrupadoPorConsultora) {
         var colunas = [
@@ -155,6 +187,77 @@
         });
     }
 
+    // ---- Tabela-resumo por consultora ----
+
+    function calcularResumoPorConsultora(detalhe) {
+        var porConsultora = {};
+        detalhe.forEach(function (linha) {
+            var nome = linha.FirstName || '(não informado)';
+            porConsultora[nome] = porConsultora[nome] || [];
+            porConsultora[nome].push(linha);
+        });
+
+        return Object.keys(porConsultora).sort().map(function (nome) {
+            var subset = porConsultora[nome];
+            var geral = calcularResumoDeStatus(subset);
+            var melhores = calcularResumoMelhores(subset);
+            return {
+                Consultora: nome,
+                QtdTotal: geral.qtd_total, ValorTotal: geral.valor_total,
+                QtdProspectados: geral.qtd_prospectados, ValorProspectados: geral.valor_prospectados,
+                QtdPendenteComReq: geral.qtd_pendente_com_req, ValorPendenteComReq: geral.valor_pendente_com_req,
+                QtdPendenteSemReq: geral.qtd_pendente_sem_req, ValorPendenteSemReq: geral.valor_pendente_sem_req,
+                QtdMelhores: melhores.qtd_total, ValorMelhores: melhores.valor_total,
+                QtdMelhoresProspectados: melhores.qtd_prospectados, ValorMelhoresProspectados: melhores.valor_prospectados,
+                QtdMelhoresPendenteComReq: melhores.qtd_pendente_com_req, ValorMelhoresPendenteComReq: melhores.valor_pendente_com_req,
+                QtdMelhoresPendenteSemReq: melhores.qtd_pendente_sem_req, ValorMelhoresPendenteSemReq: melhores.valor_pendente_sem_req
+            };
+        });
+    }
+
+    function atualizarTabelaConsultora(linhas) {
+        if (tabelaConsultora) {
+            tabelaConsultora.destroy();
+            $('#tabela-consultora-resumo').empty().append('<thead></thead><tbody></tbody>');
+        }
+
+        var colunas = [
+            { data: 'Consultora', title: 'Consultora' },
+            { data: 'QtdTotal', title: 'Qtd. Total' },
+            { data: 'ValorTotal', title: 'Valor Total', render: renderMoeda },
+            { data: 'QtdProspectados', title: 'Qtd. Prospectados' },
+            { data: 'ValorProspectados', title: 'Valor Prospectados', render: renderMoeda },
+            { data: 'QtdPendenteComReq', title: 'Qtd. Pendente c/ Req' },
+            { data: 'ValorPendenteComReq', title: 'Valor Pendente c/ Req', render: renderMoeda },
+            { data: 'QtdPendenteSemReq', title: 'Qtd. Pendente s/ Req' },
+            { data: 'ValorPendenteSemReq', title: 'Valor Pendente s/ Req', render: renderMoeda },
+            { data: 'QtdMelhores', title: 'Qtd. Melhores' },
+            { data: 'ValorMelhores', title: 'Valor Melhores', render: renderMoeda },
+            { data: 'QtdMelhoresProspectados', title: 'Qtd. Melhores Prospectados' },
+            { data: 'ValorMelhoresProspectados', title: 'Valor Melhores Prospectados', render: renderMoeda },
+            { data: 'QtdMelhoresPendenteComReq', title: 'Qtd. Melhores Pend. c/ Req' },
+            { data: 'ValorMelhoresPendenteComReq', title: 'Valor Melhores Pend. c/ Req', render: renderMoeda },
+            { data: 'QtdMelhoresPendenteSemReq', title: 'Qtd. Melhores Pend. s/ Req' },
+            { data: 'ValorMelhoresPendenteSemReq', title: 'Valor Melhores Pend. s/ Req', render: renderMoeda }
+        ];
+
+        var cabecalho = '<tr>' + colunas.map(function (c) { return '<th>' + c.title + '</th>'; }).join('') + '</tr>';
+        $('#tabela-consultora-resumo thead').html(cabecalho);
+
+        tabelaConsultora = $('#tabela-consultora-resumo').DataTable({
+            data: linhas,
+            columns: colunas,
+            language: {
+                url: 'https://cdn.datatables.net/plug-ins/2.1.8/i18n/pt-BR.json'
+            },
+            order: [],
+            pageLength: 25,
+            scrollX: true
+        });
+    }
+
+    // ---- Gráficos genéricos ----
+
     // Formata o rótulo/tooltip padrão dos gráficos: valor em R$ + quantidade
     // de precatórios (lida do campo `qtd` anexado a cada ponto de dado).
     function tooltipValorEQtd() {
@@ -165,27 +268,23 @@
         return this.x + ' (' + formatarInteiro(this.getData('qtd')) + ')';
     }
 
-    function atualizarGraficoResumo(resumo) {
-        if (chartResumo) {
-            chartResumo.dispose();
-        }
-        var dados = [
-            { x: 'Prospectados', value: resumo.valor_prospectados, qtd: resumo.qtd_prospectados },
-            { x: 'Pendente c/ Requisitório', value: resumo.valor_pendente_com_req, qtd: resumo.qtd_pendente_com_req },
-            { x: 'Pendente s/ Requisitório', value: resumo.valor_pendente_sem_req, qtd: resumo.qtd_pendente_sem_req }
-        ];
-        chartResumo = anychart.pie(dados);
-        chartResumo.title('Distribuição de Valor (Prospecção)');
-        chartResumo.labels().format(labelNomeEQtd);
-        chartResumo.tooltip().format(tooltipValorEQtd);
-        chartResumo.container('chart-resumo');
-        chartResumo.draw();
+    function desenharGraficoPizza(dados, containerId, titulo) {
+        disposeChart(containerId);
+        var chart = anychart.pie(dados);
+        chart.title(titulo);
+        chart.labels().format(labelNomeEQtd);
+        chart.tooltip().format(tooltipValorEQtd);
+        chart.container(containerId);
+        chart.draw();
+        charts[containerId] = chart;
+        return chart;
     }
 
-    // Gera um gráfico de colunas agregando `campoValor`/`campoQtd` por
-    // StatusPrec (ou por consultora, quando agrupado). Reaproveitado tanto
-    // para o valor total quanto para o valor das "melhores negociações".
+    // Gera um gráfico de barras horizontais agregando `campoValor`/`campoQtd`
+    // por StatusPrec (ou por consultora, quando agrupado).
     function desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, campoValor, campoQtd, tituloBase, containerId) {
+        disposeChart(containerId);
+
         var agregados = {};
         var chave = agrupadoPorConsultora ? 'FirstName' : 'StatusPrec';
 
@@ -202,10 +301,9 @@
             return { x: rotulo, value: agregados[rotulo].valor, qtd: agregados[rotulo].qtd };
         });
 
-        // anychart.bar() = barras horizontais: categorias (status/consultora)
-        // nas linhas, valores nas colunas. No AnyChart, xAxis()/yAxis() seguem
-        // o papel do dado (categoria/valor), não a posição visual — então o
-        // eixo de valores continua sendo yAxis() mesmo com o gráfico deitado.
+        // anychart.bar() = barras horizontais. No AnyChart, xAxis()/yAxis()
+        // seguem o papel do dado (categoria/valor), não a posição visual —
+        // o eixo de valores continua sendo yAxis() mesmo com o gráfico deitado.
         var chart = anychart.bar(dados);
         chart.title(tituloBase + (agrupadoPorConsultora ? ' por Consultora' : ' por Status'));
         chart.yAxis().labels().format(function () {
@@ -217,50 +315,178 @@
         });
         chart.container(containerId);
         chart.draw();
+        charts[containerId] = chart;
         return chart;
     }
 
-    function atualizarGraficoStatus(detalhe, agrupadoPorConsultora) {
-        if (chartStatus) {
-            chartStatus.dispose();
-        }
-        chartStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorTotal', 'QuantidadeTotal', 'Valor Total', 'chart-status');
-    }
+    // Barras empilhadas: uma barra por consultora, segmentada por StatusPrec.
+    function desenharGraficoEmpilhado(detalhe, campoValor, tituloBase, containerId) {
+        disposeChart(containerId);
 
-    function atualizarGraficoMelhoresResumo(detalhe) {
-        if (chartMelhoresResumo) {
-            chartMelhoresResumo.dispose();
-        }
+        var consultoras = [];
+        var statusList = [];
+        var valores = {};
 
-        var valorComReq = 0;
-        var valorSemReq = 0;
-        var qtdComReq = 0;
-        var qtdSemReq = 0;
         detalhe.forEach(function (linha) {
-            valorComReq += Number(linha.ValorMelhoresComReq) || 0;
-            valorSemReq += Number(linha.ValorMelhoresSemReq) || 0;
-            qtdComReq += Number(linha.QtdMelhoresComReq) || 0;
-            qtdSemReq += Number(linha.QtdMelhoresSemReq) || 0;
+            var consultora = linha.FirstName || '(não informado)';
+            var status = linha.StatusPrec;
+            if (consultoras.indexOf(consultora) === -1) {
+                consultoras.push(consultora);
+            }
+            if (statusList.indexOf(status) === -1) {
+                statusList.push(status);
+            }
+            valores[consultora] = valores[consultora] || {};
+            valores[consultora][status] = (valores[consultora][status] || 0) + (Number(linha[campoValor]) || 0);
+        });
+        consultoras.sort();
+
+        var chart = anychart.bar();
+        chart.yScale().stackMode('value');
+
+        statusList.forEach(function (status) {
+            var serieDados = consultoras.map(function (consultora) {
+                return { x: consultora, value: (valores[consultora] && valores[consultora][status]) || 0 };
+            });
+            chart.bar(serieDados).name(status);
         });
 
-        var dados = [
-            { x: 'Melhores c/ Requisitório', value: valorComReq, qtd: qtdComReq },
-            { x: 'Melhores s/ Requisitório', value: valorSemReq, qtd: qtdSemReq }
-        ];
-        chartMelhoresResumo = anychart.pie(dados);
-        chartMelhoresResumo.title('Distribuição de Valor (Melhores Negociações)');
-        chartMelhoresResumo.labels().format(labelNomeEQtd);
-        chartMelhoresResumo.tooltip().format(tooltipValorEQtd);
-        chartMelhoresResumo.container('chart-melhores-resumo');
-        chartMelhoresResumo.draw();
+        chart.title(tituloBase + ' por Consultora e Status');
+        chart.legend().enabled(true);
+        chart.legend().position('bottom');
+        chart.yAxis().labels().format(function () {
+            return formatarMoeda(this.value);
+        });
+        chart.tooltip().format(function () {
+            return this.seriesName + ': ' + formatarMoeda(this.value);
+        });
+        chart.container(containerId);
+        chart.draw();
+        charts[containerId] = chart;
+        return chart;
     }
 
-    function atualizarGraficoMelhoresStatus(detalhe, agrupadoPorConsultora) {
-        if (chartMelhoresStatus) {
-            chartMelhoresStatus.dispose();
-        }
-        chartMelhoresStatus = desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorMelhores', 'QtdMelhores', 'Valor Melhores', 'chart-melhores-status');
+    // ---- Painel principal (sempre visível: geral + melhores negociações) ----
+
+    function atualizarPainelPrincipal(resumo, detalhe, agrupadoPorConsultora) {
+        preencherCards(resumo, 'card');
+        preencherCards(calcularResumoMelhores(detalhe), 'card-melhores');
+
+        desenharGraficoPizza([
+            { x: 'Prospectados', value: resumo.valor_prospectados, qtd: resumo.qtd_prospectados },
+            { x: 'Pendente c/ Requisitório', value: resumo.valor_pendente_com_req, qtd: resumo.qtd_pendente_com_req },
+            { x: 'Pendente s/ Requisitório', value: resumo.valor_pendente_sem_req, qtd: resumo.qtd_pendente_sem_req }
+        ], 'chart-resumo', 'Distribuição de Valor (Prospecção)');
+
+        desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorTotal', 'QuantidadeTotal', 'Valor Total', 'chart-status');
+
+        var comReq = 0, semReq = 0, qtdCom = 0, qtdSem = 0;
+        detalhe.forEach(function (linha) {
+            comReq += Number(linha.ValorMelhoresComReq) || 0;
+            semReq += Number(linha.ValorMelhoresSemReq) || 0;
+            qtdCom += Number(linha.QtdMelhoresComReq) || 0;
+            qtdSem += Number(linha.QtdMelhoresSemReq) || 0;
+        });
+        desenharGraficoPizza([
+            { x: 'Melhores c/ Requisitório', value: comReq, qtd: qtdCom },
+            { x: 'Melhores s/ Requisitório', value: semReq, qtd: qtdSem }
+        ], 'chart-melhores-resumo', 'Distribuição de Valor (Melhores Negociações)');
+
+        desenharGraficoPorStatus(detalhe, agrupadoPorConsultora, 'ValorMelhores', 'QtdMelhores', 'Valor Melhores', 'chart-melhores-status');
     }
+
+    // ---- Visão Geral por Consultora ----
+
+    function atualizarSecaoConsultoraGeral() {
+        atualizarTabelaConsultora(calcularResumoPorConsultora(ultimoDetalhe));
+        desenharGraficoEmpilhado(ultimoDetalhe, 'ValorTotal', 'Valor Total', 'chart-consultora-empilhado');
+        desenharGraficoEmpilhado(ultimoDetalhe, 'ValorMelhores', 'Valor Melhores', 'chart-consultora-empilhado-melhores');
+    }
+
+    // ---- Detalhe por Consultora (uma pessoa por vez) ----
+
+    function popularSelectConsultora(detalhe) {
+        var nomes = Array.from(new Set(detalhe.map(function (l) { return l.FirstName; }).filter(Boolean))).sort();
+        var select = $('#select-consultora');
+        var atual = select.val();
+        select.empty();
+        nomes.forEach(function (nome) {
+            select.append($('<option></option>').val(nome).text(nome));
+        });
+        if (nomes.indexOf(atual) !== -1) {
+            select.val(atual);
+        }
+    }
+
+    function atualizarSecaoConsultoraDetalhe() {
+        var nome = $('#select-consultora').val();
+        var subset = ultimoDetalhe.filter(function (linha) { return linha.FirstName === nome; });
+
+        var geral = calcularResumoDeStatus(subset);
+        var melhores = calcularResumoMelhores(subset);
+
+        preencherCards(geral, 'card-consultora');
+        preencherCards(melhores, 'card-consultora-melhores');
+
+        desenharGraficoPizza([
+            { x: 'Prospectados', value: geral.valor_prospectados, qtd: geral.qtd_prospectados },
+            { x: 'Pendente c/ Requisitório', value: geral.valor_pendente_com_req, qtd: geral.qtd_pendente_com_req },
+            { x: 'Pendente s/ Requisitório', value: geral.valor_pendente_sem_req, qtd: geral.qtd_pendente_sem_req }
+        ], 'chart-consultora-resumo', 'Distribuição de Valor (Prospecção)' + (nome ? ' — ' + nome : ''));
+        desenharGraficoPorStatus(subset, false, 'ValorTotal', 'QuantidadeTotal', 'Valor Total', 'chart-consultora-status');
+
+        var comReq = 0, semReq = 0, qtdCom = 0, qtdSem = 0;
+        subset.forEach(function (linha) {
+            comReq += Number(linha.ValorMelhoresComReq) || 0;
+            semReq += Number(linha.ValorMelhoresSemReq) || 0;
+            qtdCom += Number(linha.QtdMelhoresComReq) || 0;
+            qtdSem += Number(linha.QtdMelhoresSemReq) || 0;
+        });
+        desenharGraficoPizza([
+            { x: 'Melhores c/ Requisitório', value: comReq, qtd: qtdCom },
+            { x: 'Melhores s/ Requisitório', value: semReq, qtd: qtdSem }
+        ], 'chart-consultora-melhores-resumo', 'Distribuição de Valor (Melhores Negociações)' + (nome ? ' — ' + nome : ''));
+        desenharGraficoPorStatus(subset, false, 'ValorMelhores', 'QtdMelhores', 'Valor Melhores', 'chart-consultora-melhores-status');
+    }
+
+    // ---- Alternância de modo/visibilidade ----
+
+    function modoConsultoraAtual() {
+        return $('input[name="modo_consultora"]:checked').val() || 'geral';
+    }
+
+    function atualizarVisibilidade(agrupadoPorConsultora) {
+        $('#opcoes-consultora').toggleClass('d-none', !agrupadoPorConsultora);
+
+        var modo = modoConsultoraAtual();
+        var mostrarGeral = agrupadoPorConsultora && modo === 'geral';
+        var mostrarDetalhe = agrupadoPorConsultora && modo === 'detalhe';
+
+        // As pizzas (Prospectados/Pendentes) são por status, não por pessoa —
+        // somem quando agrupado; a barra por consultora ocupa a linha toda.
+        $('#col-chart-resumo, #col-chart-melhores-resumo').toggleClass('d-none', agrupadoPorConsultora);
+        $('#col-chart-status, #col-chart-melhores-status')
+            .toggleClass('col-md-6', !agrupadoPorConsultora)
+            .toggleClass('col-md-12', agrupadoPorConsultora);
+
+        $('#secao-consultora-geral, #secao-consultora-geral-melhores').toggleClass('d-none', !mostrarGeral);
+        $('#secao-consultora-detalhe, #secao-consultora-detalhe-melhores').toggleClass('d-none', !mostrarDetalhe);
+        $('#select-consultora-wrapper').toggleClass('d-none', !mostrarDetalhe);
+    }
+
+    function renderizarModoConsultora() {
+        if (!ultimoAgrupado) {
+            return;
+        }
+        atualizarVisibilidade(true);
+        if (modoConsultoraAtual() === 'geral') {
+            atualizarSecaoConsultoraGeral();
+        } else {
+            atualizarSecaoConsultoraDetalhe();
+        }
+    }
+
+    // ---- Carregamento principal ----
 
     function carregarDados() {
         limparErro();
@@ -272,13 +498,19 @@
                     mostrarErro(resposta.erro || 'Não foi possível carregar os dados.');
                     return;
                 }
-                atualizarCards(resposta.resumo);
-                atualizarCardsMelhores(resposta.detalhe);
-                atualizarTabela(resposta.detalhe, resposta.agrupado_por_consultora);
-                atualizarGraficoResumo(resposta.resumo);
-                atualizarGraficoStatus(resposta.detalhe, resposta.agrupado_por_consultora);
-                atualizarGraficoMelhoresResumo(resposta.detalhe);
-                atualizarGraficoMelhoresStatus(resposta.detalhe, resposta.agrupado_por_consultora);
+
+                ultimoDetalhe = resposta.detalhe;
+                ultimoResumo = resposta.resumo;
+                ultimoAgrupado = resposta.agrupado_por_consultora;
+
+                atualizarPainelPrincipal(ultimoResumo, ultimoDetalhe, ultimoAgrupado);
+                atualizarTabela(ultimoDetalhe, ultimoAgrupado);
+                atualizarVisibilidade(ultimoAgrupado);
+
+                if (ultimoAgrupado) {
+                    popularSelectConsultora(ultimoDetalhe);
+                }
+                renderizarModoConsultora();
             })
             .fail(function (xhr) {
                 var mensagem = 'Não foi possível carregar os dados.';
@@ -293,6 +525,14 @@
         $('#form-prospeccao').on('submit', function (e) {
             e.preventDefault();
             carregarDados();
+        });
+
+        $('input[name="modo_consultora"]').on('change', function () {
+            renderizarModoConsultora();
+        });
+
+        $('#select-consultora').on('change', function () {
+            atualizarSecaoConsultoraDetalhe();
         });
     });
 })(jQuery);
