@@ -5,6 +5,7 @@
 
     $read_ente = DBread($pdo, 'Ente', 'ORDER BY Ente');
     $naturezas = prospeccao_listar_naturezas($pdo);
+    $orcamentos = prospeccao_listar_orcamentos($pdo);
 
     $title = "Painel de Prospecção";
     require __DIR__ . '/templates/head.php';
@@ -20,8 +21,10 @@
     <form id="form-prospeccao" class="row g-3 align-items-end mb-4">
         <div class="col-md-3">
             <label for="ente_id" class="form-label">Ente</label>
-            <select class="form-select" id="ente_id" name="ente_id" required>
-                <option value="" selected disabled>Selecione um Ente</option>
+            <select class="selectpicker form-control" id="ente_id" name="ente_id[]" multiple required
+                    data-actions-box="true" data-live-search="true"
+                    data-select-all-text="Selecionar todos" data-deselect-all-text="Limpar seleção"
+                    data-none-selected-text="Selecione um ou mais Entes">
                 <?php foreach ($read_ente as $ente): ?>
                 <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                 <?php endforeach; ?>
@@ -29,14 +32,23 @@
         </div>
         <div class="col-md-2">
             <label for="orcamento" class="form-label">Orçamento</label>
-            <input type="number" class="form-control" id="orcamento" name="orcamento" placeholder="Todos">
+            <select class="selectpicker form-control" id="orcamento" name="orcamento[]" multiple
+                    data-actions-box="true"
+                    data-select-all-text="Selecionar todos" data-deselect-all-text="Limpar seleção"
+                    data-none-selected-text="Todos">
+                <?php foreach ($orcamentos as $ano): ?>
+                <option value="<?php echo htmlspecialchars($ano); ?>"><?php echo htmlspecialchars($ano); ?></option>
+                <?php endforeach; ?>
+            </select>
         </div>
         <div class="col-md-2">
             <label for="natureza_id" class="form-label">Natureza</label>
-            <select class="form-select" id="natureza_id" name="natureza_id">
-                <option value="" selected>Todas</option>
+            <select class="selectpicker form-control" id="natureza_id" name="natureza_id[]" multiple
+                    data-actions-box="true"
+                    data-select-all-text="Selecionar todas" data-deselect-all-text="Limpar seleção"
+                    data-none-selected-text="Todas">
                 <?php foreach ($naturezas as $natureza): ?>
-                <option value="<?php echo htmlspecialchars($natureza); ?>"><?php echo htmlspecialchars($natureza); ?></option>
+                <option value="<?php echo htmlspecialchars($natureza['id']); ?>"><?php echo htmlspecialchars($natureza['nome']); ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -295,10 +307,6 @@
         </div>
     </div>
 
-    <table id="tabela-detalhe" class="table table-striped table-bordered w-100">
-        <thead></thead>
-        <tbody></tbody>
-    </table>
 </div>
 
 <!-- jQuery -->
@@ -307,6 +315,8 @@
 <script src="https://cdn.datatables.net/v/bs5/dt-2.1.8/b-3.1.2/datatables.min.js"></script>
 <!-- AnyChart -->
 <script src="https://cdn.anychart.com/releases/latest/js/anychart-base.min.js"></script>
+<!-- Bootstrap-select (multi-select com selecionar/limpar todos) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 
 <script src="js/prospeccao.js"></script>
 

@@ -4,10 +4,9 @@
 // Regras de negócio replicadas da query original fornecida:
 // - StatusId 66, 72, 74 e 75 são sempre excluídos do pipeline de prospecção.
 // - RequisitorioId 1 ou 3 (ou nulo) é considerado "sem requisitório".
-// - Quando um orçamento é informado, filtra exatamente o ano escolhido.
-//   Sem orçamento informado, nenhum filtro de ano é aplicado (todos os
-//   orçamentos).
-// - Natureza (NaturezaId) é um filtro independente e opcional.
+// - Ente, Orçamento e Natureza aceitam múltiplos valores (IN). Orçamento e
+//   Natureza são opcionais: nenhum valor selecionado = sem filtro (todos).
+//   Ente é obrigatório: ao menos um precisa ser selecionado.
 // - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
 // - prec_pg IS NULL AND Active = 1 (pendente de pagamento e ativo no sistema)
 //   é aplicado em TODAS as consultas do painel, inclusive no "Total de
@@ -17,37 +16,64 @@
 const PROSPECCAO_STATUS_EXCLUIDOS = ['66', '72', '74', '75'];
 const PROSPECCAO_STATUS_ID_PENDENTE = '65';
 
-function prospeccao_sanitize_ente_id($raw) {
-    if (!is_numeric($raw) || (int)$raw <= 0) {
-        throw new InvalidArgumentException('Ente inválido.');
-    }
-    return (int)$raw;
+function prospeccao_placeholders($quantidade) {
+    return implode(',', array_fill(0, $quantidade, '?'));
 }
 
-// Orçamento é opcional: string vazia/ausente = sem filtro (todos os orçamentos).
-function prospeccao_sanitize_orcamento($raw) {
-    if ($raw === null || $raw === '') {
-        return null;
+// Aceita um valor único ou array (selects múltiplos sempre chegam como
+// array vindo do formulário). Devolve uma lista de inteiros positivos.
+function prospeccao_sanitize_ente_ids($raw) {
+    $valores = is_array($raw) ? $raw : (($raw === null || $raw === '') ? [] : [$raw]);
+    $ids = [];
+    foreach ($valores as $valor) {
+        if ($valor === null || $valor === '') {
+            continue;
+        }
+        if (!is_numeric($valor) || (int)$valor <= 0) {
+            throw new InvalidArgumentException('Ente inválido.');
+        }
+        $ids[] = (int)$valor;
     }
-    if (!ctype_digit((string)$raw)) {
-        throw new InvalidArgumentException('Orçamento inválido.');
+    if (empty($ids)) {
+        throw new InvalidArgumentException('Selecione ao menos um Ente.');
     }
-    $ano = (int)$raw;
-    if ($ano < 2000 || $ano > 2100) {
-        throw new InvalidArgumentException('Orçamento fora do intervalo permitido.');
-    }
-    return $ano;
+    return array_values(array_unique($ids));
 }
 
-// Natureza também é opcional: string vazia/ausente = sem filtro (todas as naturezas).
-function prospeccao_sanitize_natureza($raw) {
-    if ($raw === null || $raw === '') {
-        return null;
+// Orçamento é opcional: nenhum valor selecionado = sem filtro (todos os orçamentos).
+function prospeccao_sanitize_orcamentos($raw) {
+    $valores = is_array($raw) ? $raw : (($raw === null || $raw === '') ? [] : [$raw]);
+    $anos = [];
+    foreach ($valores as $valor) {
+        if ($valor === null || $valor === '') {
+            continue;
+        }
+        if (!ctype_digit((string)$valor)) {
+            throw new InvalidArgumentException('Orçamento inválido.');
+        }
+        $ano = (int)$valor;
+        if ($ano < 2000 || $ano > 2100) {
+            throw new InvalidArgumentException('Orçamento fora do intervalo permitido.');
+        }
+        $anos[] = $ano;
     }
-    if (!ctype_digit((string)$raw)) {
-        throw new InvalidArgumentException('Natureza inválida.');
+    return array_values(array_unique($anos));
+}
+
+// Natureza também é opcional: nenhum valor selecionado = sem filtro (todas as naturezas).
+function prospeccao_sanitize_naturezas($raw) {
+    $valores = is_array($raw) ? $raw : (($raw === null || $raw === '') ? [] : [$raw]);
+    $ids = [];
+    foreach ($valores as $valor) {
+        if ($valor === null || $valor === '') {
+            continue;
+        }
+        if (!ctype_digit((string)$valor)) {
+            throw new InvalidArgumentException('Natureza inválida.');
+        }
+        $ids[] = (int)$valor;
     }
-    return (int)$raw;
+    return array_values(array_unique($ids));
 }
 
 function prospeccao_sanitize_data($raw) {
@@ -69,17 +95,13 @@ function prospeccao_sanitize_valor_min($raw) {
 // Normaliza e valida todos os filtros vindos do formulário/API.
 function prospeccao_parse_filtros(array $input) {
     return [
-        'ente_id'        => prospeccao_sanitize_ente_id($input['ente_id'] ?? null),
-        'orcamento'      => prospeccao_sanitize_orcamento($input['orcamento'] ?? null),
-        'natureza_id'    => prospeccao_sanitize_natureza($input['natureza_id'] ?? null),
+        'ente_ids'       => prospeccao_sanitize_ente_ids($input['ente_id'] ?? null),
+        'orcamentos'     => prospeccao_sanitize_orcamentos($input['orcamento'] ?? null),
+        'natureza_ids'   => prospeccao_sanitize_naturezas($input['natureza_id'] ?? null),
         'data_max'       => prospeccao_sanitize_data($input['data_max'] ?? null),
         'valor_min'      => prospeccao_sanitize_valor_min($input['valor_min'] ?? null),
         'por_consultora' => !empty($input['por_consultora']),
     ];
-}
-
-function prospeccao_status_excluidos_placeholders() {
-    return implode(',', array_fill(0, count(PROSPECCAO_STATUS_EXCLUIDOS), '?'));
 }
 
 // Monta a cláusula WHERE comum (ente, pipeline de prospecção, orçamento e natureza)
@@ -89,41 +111,57 @@ function prospeccao_status_excluidos_placeholders() {
 // consultora), que já se mostrou ter colunas de mesmo nome (FirstName,
 // Active) — sem o prefixo, a query fica ambígua assim que o JOIN entra.
 function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
-    $params = [$filtros['ente_id']];
-    // Pendente de pagamento e ativo no sistema: vale para todas as consultas do painel.
+    $params = [];
     $clausulas = [
-        'precatoriodetalhe.ente_id = ?',
+        'precatoriodetalhe.ente_id IN (' . prospeccao_placeholders(count($filtros['ente_ids'])) . ')',
         'precatoriodetalhe.prec_pg IS NULL',
         'precatoriodetalhe.Active = 1',
     ];
+    foreach ($filtros['ente_ids'] as $enteId) {
+        $params[] = $enteId;
+    }
 
     if ($incluirPipeline) {
-        $clausulas[] = 'precatoriodetalhe.StatusId NOT IN (' . prospeccao_status_excluidos_placeholders() . ')';
+        $clausulas[] = 'precatoriodetalhe.StatusId NOT IN (' . prospeccao_placeholders(count(PROSPECCAO_STATUS_EXCLUIDOS)) . ')';
         foreach (PROSPECCAO_STATUS_EXCLUIDOS as $statusId) {
             $params[] = $statusId;
         }
     }
 
-    if ($filtros['orcamento'] !== null) {
-        $clausulas[] = 'precatoriodetalhe.Orcamento = ?';
-        $params[] = $filtros['orcamento'];
+    if (!empty($filtros['orcamentos'])) {
+        $clausulas[] = 'precatoriodetalhe.Orcamento IN (' . prospeccao_placeholders(count($filtros['orcamentos'])) . ')';
+        foreach ($filtros['orcamentos'] as $ano) {
+            $params[] = $ano;
+        }
     }
 
-    if ($filtros['natureza_id'] !== null) {
-        $clausulas[] = 'precatoriodetalhe.NaturezaId = ?';
-        $params[] = $filtros['natureza_id'];
+    if (!empty($filtros['natureza_ids'])) {
+        $clausulas[] = 'precatoriodetalhe.NaturezaId IN (' . prospeccao_placeholders(count($filtros['natureza_ids'])) . ')';
+        foreach ($filtros['natureza_ids'] as $naturezaId) {
+            $params[] = $naturezaId;
+        }
     }
 
     return implode("\n          AND ", $clausulas);
 }
 
-// Naturezas distintas existentes na base, para popular o filtro do formulário.
+// Naturezas cadastradas (id + nome), para popular o filtro do formulário.
 function prospeccao_listar_naturezas(PDO $pdo) {
     $stmt = $pdo->query("
-        SELECT DISTINCT NaturezaId
+        SELECT natuPrec_id AS id, Natureza AS nome
+        FROM precappapp.NaturezaPrec
+        ORDER BY Natureza
+    ");
+    return $stmt->fetchAll();
+}
+
+// Orçamentos distintos existentes na base, para popular o filtro do formulário.
+function prospeccao_listar_orcamentos(PDO $pdo) {
+    $stmt = $pdo->query("
+        SELECT DISTINCT Orcamento
         FROM precappapp.precatoriodetalhe
-        WHERE NaturezaId IS NOT NULL
-        ORDER BY NaturezaId
+        WHERE Orcamento IS NOT NULL
+        ORDER BY Orcamento DESC
     ");
     return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
@@ -200,7 +238,8 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
 
     // Ente e StatusId entram no GROUP BY (junto de StatusPrec) para funcionar
     // tanto em servidores com sql_mode=ONLY_FULL_GROUP_BY quanto sem; não
-    // altera o resultado, já que ente_id é fixo no WHERE e StatusId é 1:1 com StatusPrec.
+    // altera o resultado, já que StatusId é 1:1 com StatusPrec e Ente é
+    // funcionalmente dependente de ente_id (mesmo havendo vários entes no IN).
     $sql = "
         SELECT
             precatoriodetalhe.Ente,
