@@ -24,7 +24,5 @@ try {
 } catch (Throwable $e) {
     error_log('prospeccao.php: ' . $e->getMessage());
     http_response_code(500);
-    // TODO: trocar de volta para uma mensagem genérica assim que o JOIN com
-    // Usuario estiver depurado — por ora expõe o erro real para diagnóstico.
-    echo json_encode(['ok' => false, 'erro' => 'Erro ao consultar os dados: ' . $e->getMessage()]);
+    echo json_encode(['ok' => false, 'erro' => 'Erro ao consultar os dados.']);
 }

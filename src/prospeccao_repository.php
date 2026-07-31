@@ -84,25 +84,33 @@ function prospeccao_status_excluidos_placeholders() {
 
 // Monta a cláusula WHERE comum (ente, pipeline de prospecção, orçamento e natureza)
 // e devolve, por referência, os parâmetros na mesma ordem dos "?" gerados.
+// Colunas sempre qualificadas com "precatoriodetalhe." porque
+// prospeccao_detalhe() pode juntar a tabela Usuario (quando agrupado por
+// consultora), que já se mostrou ter colunas de mesmo nome (FirstName,
+// Active) — sem o prefixo, a query fica ambígua assim que o JOIN entra.
 function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
     $params = [$filtros['ente_id']];
     // Pendente de pagamento e ativo no sistema: vale para todas as consultas do painel.
-    $clausulas = ['ente_id = ?', 'prec_pg IS NULL', 'Active = 1'];
+    $clausulas = [
+        'precatoriodetalhe.ente_id = ?',
+        'precatoriodetalhe.prec_pg IS NULL',
+        'precatoriodetalhe.Active = 1',
+    ];
 
     if ($incluirPipeline) {
-        $clausulas[] = 'StatusId NOT IN (' . prospeccao_status_excluidos_placeholders() . ')';
+        $clausulas[] = 'precatoriodetalhe.StatusId NOT IN (' . prospeccao_status_excluidos_placeholders() . ')';
         foreach (PROSPECCAO_STATUS_EXCLUIDOS as $statusId) {
             $params[] = $statusId;
         }
     }
 
     if ($filtros['orcamento'] !== null) {
-        $clausulas[] = 'Orcamento = ?';
+        $clausulas[] = 'precatoriodetalhe.Orcamento = ?';
         $params[] = $filtros['orcamento'];
     }
 
     if ($filtros['natureza_id'] !== null) {
-        $clausulas[] = 'NaturezaId = ?';
+        $clausulas[] = 'precatoriodetalhe.NaturezaId = ?';
         $params[] = $filtros['natureza_id'];
     }
 
@@ -127,8 +135,8 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
     $whereTotal = prospeccao_build_where($filtros, false, $paramsTotal);
     $sqlTotal = "
         SELECT
-            COUNT(Precatorio) AS QtdTotal,
-            COALESCE(SUM(CAST(ValorPrec AS DECIMAL(15,2))), 0) AS ValorTotal
+            COUNT(precatoriodetalhe.Precatorio) AS QtdTotal,
+            COALESCE(SUM(CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2))), 0) AS ValorTotal
         FROM precappapp.precatoriodetalhe
         WHERE {$whereTotal}
     ";
@@ -139,12 +147,12 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
     $wherePipeline = prospeccao_build_where($filtros, true, $paramsPipeline);
     $sqlPipeline = "
         SELECT
-            SUM(CASE WHEN StatusId <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
-            SUM(CASE WHEN StatusId <> ? THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorProspectados,
-            SUM(CASE WHEN StatusId = ? AND RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdPendenteComReq,
-            SUM(CASE WHEN StatusId = ? AND RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteComReq,
-            SUM(CASE WHEN StatusId = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
-            SUM(CASE WHEN StatusId = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteSemReq
+            SUM(CASE WHEN precatoriodetalhe.StatusId <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
+            SUM(CASE WHEN precatoriodetalhe.StatusId <> ? THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorProspectados,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdPendenteComReq,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteComReq,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteSemReq
         FROM precappapp.precatoriodetalhe
         WHERE {$wherePipeline}
     ";
@@ -195,26 +203,26 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
     // altera o resultado, já que ente_id é fixo no WHERE e StatusId é 1:1 com StatusPrec.
     $sql = "
         SELECT
-            Ente,
-            StatusPrec,
-            StatusId,
-            {$selectConsultora}COUNT(Precatorio) AS QuantidadeTotal,
-            SUM(CAST(ValorPrec AS DECIMAL(15,2))) AS ValorTotal,
-            SUM(CASE WHEN RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS ComRequisitorio,
-            SUM(CASE WHEN RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorComRequisitorio,
-            SUM(CASE WHEN RequisitorioId IS NULL OR RequisitorioId IN (1, 3) THEN 1 ELSE 0 END) AS SemRequisitorio,
-            SUM(CASE WHEN RequisitorioId IS NULL OR RequisitorioId IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorSemRequisitorio,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? THEN 1 ELSE 0 END) AS QtdMelhores,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhores,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdMelhoresComReq,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresComReq,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresSemReq
+            precatoriodetalhe.Ente,
+            precatoriodetalhe.StatusPrec,
+            precatoriodetalhe.StatusId,
+            {$selectConsultora}COUNT(precatoriodetalhe.Precatorio) AS QuantidadeTotal,
+            SUM(CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2))) AS ValorTotal,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS ComRequisitorio,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorComRequisitorio,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3) THEN 1 ELSE 0 END) AS SemRequisitorio,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3) THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorSemRequisitorio,
+            SUM(CASE WHEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) >= ? AND precatoriodetalhe.DataRecebimento < ? THEN 1 ELSE 0 END) AS QtdMelhores,
+            SUM(CASE WHEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) >= ? AND precatoriodetalhe.DataRecebimento < ? THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhores,
+            SUM(CASE WHEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) >= ? AND precatoriodetalhe.DataRecebimento < ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdMelhoresComReq,
+            SUM(CASE WHEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) >= ? AND precatoriodetalhe.DataRecebimento < ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresComReq,
+            SUM(CASE WHEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) >= ? AND precatoriodetalhe.DataRecebimento < ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
+            SUM(CASE WHEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) >= ? AND precatoriodetalhe.DataRecebimento < ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN CAST(precatoriodetalhe.ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresSemReq
         FROM precappapp.precatoriodetalhe
         {$joinUsuario}
         WHERE {$where}
-        GROUP BY StatusPrec, StatusId, Ente{$groupByConsultora}
-        ORDER BY StatusPrec DESC{$orderByConsultora}
+        GROUP BY precatoriodetalhe.StatusPrec, precatoriodetalhe.StatusId, precatoriodetalhe.Ente{$groupByConsultora}
+        ORDER BY precatoriodetalhe.StatusPrec DESC{$orderByConsultora}
     ";
 
     $melhoresPar = [$filtros['valor_min'], $filtros['data_max']];
