@@ -479,7 +479,24 @@
     }
 
     $(function () {
-        $('.selectpicker').selectpicker();
+        $('.select2-multi').each(function () {
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: $(this).data('placeholder') || '',
+                closeOnSelect: false
+            });
+        });
+
+        $('.btn-selecionar-todos').on('click', function () {
+            var select = $($(this).data('target'));
+            var todos = select.find('option').map(function () { return $(this).val(); }).get();
+            select.val(todos).trigger('change');
+        });
+
+        $('.btn-limpar-selecao').on('click', function () {
+            $($(this).data('target')).val(null).trigger('change');
+        });
 
         $('#form-prospeccao').on('submit', function (e) {
             e.preventDefault();

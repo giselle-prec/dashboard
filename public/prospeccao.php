@@ -20,30 +20,39 @@
 
     <form id="form-prospeccao" class="row g-3 align-items-end mb-4">
         <div class="col-md-3">
-            <label for="ente_id" class="form-label">Ente</label>
-            <select class="form-control selectpicker" id="ente_id" name="ente_id[]" multiple required
-                    title="Selecione um ou mais Entes" data-live-search="true" data-actions-box="true"
-                    data-select-all-text="Selecionar todos" data-deselect-all-text="Limpar seleção">
+            <label for="ente_id" class="form-label">
+                Ente
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#ente_id">selecionar todos</button> ·
+                <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#ente_id">limpar</button>
+            </label>
+            <select class="form-select select2-multi" id="ente_id" name="ente_id[]" multiple required
+                    data-placeholder="Selecione um ou mais Entes">
                 <?php foreach ($read_ente as $ente): ?>
                 <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
         <div class="col-md-2">
-            <label for="orcamento" class="form-label">Orçamento</label>
-            <select class="form-control selectpicker" id="orcamento" name="orcamento[]" multiple
-                    title="Todos" data-actions-box="true"
-                    data-select-all-text="Selecionar todos" data-deselect-all-text="Limpar seleção">
+            <label for="orcamento" class="form-label">
+                Orçamento
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#orcamento">todos</button> ·
+                <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#orcamento">limpar</button>
+            </label>
+            <select class="form-select select2-multi" id="orcamento" name="orcamento[]" multiple
+                    data-placeholder="Todos">
                 <?php foreach ($orcamentos as $ano): ?>
                 <option value="<?php echo htmlspecialchars($ano); ?>"><?php echo htmlspecialchars($ano); ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
         <div class="col-md-2">
-            <label for="natureza_id" class="form-label">Natureza</label>
-            <select class="form-control selectpicker" id="natureza_id" name="natureza_id[]" multiple
-                    title="Todas" data-actions-box="true"
-                    data-select-all-text="Selecionar todas" data-deselect-all-text="Limpar seleção">
+            <label for="natureza_id" class="form-label">
+                Natureza
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#natureza_id">todas</button> ·
+                <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#natureza_id">limpar</button>
+            </label>
+            <select class="form-select select2-multi" id="natureza_id" name="natureza_id[]" multiple
+                    data-placeholder="Todas">
                 <?php foreach ($naturezas as $natureza): ?>
                 <option value="<?php echo htmlspecialchars($natureza['id']); ?>"><?php echo htmlspecialchars($natureza['nome']); ?></option>
                 <?php endforeach; ?>
@@ -312,18 +321,8 @@
 <script src="https://cdn.datatables.net/v/bs5/dt-2.1.8/b-3.1.2/datatables.min.js"></script>
 <!-- AnyChart -->
 <script src="https://cdn.anychart.com/releases/latest/js/anychart-base.min.js"></script>
-<!-- Compat: bootstrap-select 1.13.1 é da era do Bootstrap 3/4 e detecta a
-     versão do Bootstrap via $.fn.dropdown.Constructor.VERSION — API que o
-     Bootstrap 5 removeu ao abandonar plugins jQuery. O HTML/CSS que o
-     bootstrap-select gera continua compatível com o Bootstrap 5 desta
-     página; só a checagem de versão precisa ser "enganada". -->
-<script>
-    if (typeof jQuery !== 'undefined' && typeof jQuery.fn.dropdown === 'undefined') {
-        jQuery.fn.dropdown = { Constructor: { VERSION: '4.6.2' } };
-    }
-</script>
-<!-- Bootstrap-select (multi-select com busca e selecionar/limpar todos) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
+<!-- Select2 (multi-select com busca; independente do JS do Bootstrap) -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script src="js/prospeccao.js"></script>
 
