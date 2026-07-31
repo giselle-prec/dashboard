@@ -479,13 +479,7 @@
     }
 
     $(function () {
-        $('.btn-selecionar-todos').on('click', function () {
-            $($(this).data('target') + ' option').prop('selected', true);
-        });
-
-        $('.btn-limpar-selecao').on('click', function () {
-            $($(this).data('target') + ' option').prop('selected', false);
-        });
+        $('.selectpicker').selectpicker();
 
         $('#form-prospeccao').on('submit', function (e) {
             e.preventDefault();

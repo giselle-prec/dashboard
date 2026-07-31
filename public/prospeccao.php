@@ -21,11 +21,9 @@
     <form id="form-prospeccao" class="row g-3 align-items-end mb-4">
         <div class="col-md-3">
             <label for="ente_id" class="form-label">Ente</label>
-            <div class="btn-group btn-group-sm mb-1" role="group">
-                <button type="button" class="btn btn-outline-secondary btn-selecionar-todos" data-target="#ente_id">Selecionar todos</button>
-                <button type="button" class="btn btn-outline-secondary btn-limpar-selecao" data-target="#ente_id">Limpar</button>
-            </div>
-            <select class="form-select" id="ente_id" name="ente_id[]" multiple size="6" required>
+            <select class="form-control selectpicker" id="ente_id" name="ente_id[]" multiple required
+                    title="Selecione um ou mais Entes" data-live-search="true" data-actions-box="true"
+                    data-select-all-text="Selecionar todos" data-deselect-all-text="Limpar seleção">
                 <?php foreach ($read_ente as $ente): ?>
                 <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                 <?php endforeach; ?>
@@ -33,11 +31,9 @@
         </div>
         <div class="col-md-2">
             <label for="orcamento" class="form-label">Orçamento</label>
-            <div class="btn-group btn-group-sm mb-1" role="group">
-                <button type="button" class="btn btn-outline-secondary btn-selecionar-todos" data-target="#orcamento">Todos</button>
-                <button type="button" class="btn btn-outline-secondary btn-limpar-selecao" data-target="#orcamento">Limpar</button>
-            </div>
-            <select class="form-select" id="orcamento" name="orcamento[]" multiple size="6">
+            <select class="form-control selectpicker" id="orcamento" name="orcamento[]" multiple
+                    title="Todos" data-actions-box="true"
+                    data-select-all-text="Selecionar todos" data-deselect-all-text="Limpar seleção">
                 <?php foreach ($orcamentos as $ano): ?>
                 <option value="<?php echo htmlspecialchars($ano); ?>"><?php echo htmlspecialchars($ano); ?></option>
                 <?php endforeach; ?>
@@ -45,11 +41,9 @@
         </div>
         <div class="col-md-2">
             <label for="natureza_id" class="form-label">Natureza</label>
-            <div class="btn-group btn-group-sm mb-1" role="group">
-                <button type="button" class="btn btn-outline-secondary btn-selecionar-todos" data-target="#natureza_id">Todas</button>
-                <button type="button" class="btn btn-outline-secondary btn-limpar-selecao" data-target="#natureza_id">Limpar</button>
-            </div>
-            <select class="form-select" id="natureza_id" name="natureza_id[]" multiple size="6">
+            <select class="form-control selectpicker" id="natureza_id" name="natureza_id[]" multiple
+                    title="Todas" data-actions-box="true"
+                    data-select-all-text="Selecionar todas" data-deselect-all-text="Limpar seleção">
                 <?php foreach ($naturezas as $natureza): ?>
                 <option value="<?php echo htmlspecialchars($natureza['id']); ?>"><?php echo htmlspecialchars($natureza['nome']); ?></option>
                 <?php endforeach; ?>
@@ -318,6 +312,18 @@
 <script src="https://cdn.datatables.net/v/bs5/dt-2.1.8/b-3.1.2/datatables.min.js"></script>
 <!-- AnyChart -->
 <script src="https://cdn.anychart.com/releases/latest/js/anychart-base.min.js"></script>
+<!-- Compat: bootstrap-select 1.13.1 é da era do Bootstrap 3/4 e detecta a
+     versão do Bootstrap via $.fn.dropdown.Constructor.VERSION — API que o
+     Bootstrap 5 removeu ao abandonar plugins jQuery. O HTML/CSS que o
+     bootstrap-select gera continua compatível com o Bootstrap 5 desta
+     página; só a checagem de versão precisa ser "enganada". -->
+<script>
+    if (typeof jQuery !== 'undefined' && typeof jQuery.fn.dropdown === 'undefined') {
+        jQuery.fn.dropdown = { Constructor: { VERSION: '4.6.2' } };
+    }
+</script>
+<!-- Bootstrap-select (multi-select com busca e selecionar/limpar todos) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
 
 <script src="js/prospeccao.js"></script>
 
