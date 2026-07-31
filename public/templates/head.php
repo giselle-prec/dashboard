@@ -8,8 +8,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $title ?> </title>
     <!-- BOOTSTRAP -->
-    <link rel="stylesheet" href="../css/bootstrap.min.css">
-    <link rel="stylesheet" href="../css/main.css">
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/main.css">
     <!-- DATA TABELS -->
     <link href="https://cdn.datatables.net/v/bs5/dt-2.1.8/af-2.7.0/b-3.1.2/b-html5-3.1.2/b-print-3.1.2/cr-2.0.4/fh-4.0.1/r-3.0.3/sc-2.4.3/datatables.min.css" rel="stylesheet">
     <!-- ÍCONES -->
