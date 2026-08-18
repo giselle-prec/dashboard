@@ -346,10 +346,40 @@
         });
     }
 
+    // A data de quitação vem do histórico de lotes, que só cobre o período do
+    // BatchControl. O aviso diz quanto da foto depende de suposição.
+    function atualizarCobertura() {
+        var aviso = $('#aviso-cobertura');
+        var cobertura = ultimaFoto && ultimaFoto.cobertura;
+
+        if (!cobertura || !$('#somente_pendentes').is(':checked')) {
+            aviso.addClass('d-none').empty();
+            return;
+        }
+
+        var partes = [];
+        if (cobertura.inicio_historico && ultimaFoto.data_ref < cobertura.inicio_historico) {
+            partes.push('O histórico de lotes começa em ' + formatarData(cobertura.inicio_historico) +
+                '. Para datas anteriores não dá para saber quem já estava quitado.');
+        }
+        if (cobertura.quitados_sem_data > 0) {
+            partes.push(formatarInteiro(cobertura.quitados_sem_data) +
+                ' precatórios já quitados não têm rodada de batch registrada e entram como quitados em qualquer data; ' +
+                formatarInteiro(cobertura.quitados_com_data) + ' têm data de quitação conhecida.');
+        }
+
+        if (!partes.length) {
+            aviso.addClass('d-none').empty();
+            return;
+        }
+        aviso.removeClass('d-none').text(partes.join(' '));
+    }
+
     function renderizarFoto() {
         if (!ultimaFoto) {
             return;
         }
+        atualizarCobertura();
         var metrica = $('#metrica_foto').val() === 'valor' ? 'valor' : 'qtd';
         var campo = metrica === 'valor' ? 'Valor' : 'Qtd';
         var linhas = linhasFoto(ultimaFoto);
@@ -426,5 +456,12 @@
 
         $('#granularidade, #metrica').on('change', renderizarPeriodo);
         $('#metrica_foto, #agrupar_pai').on('change', renderizarFoto);
+
+        // O recorte de pendentes é feito no servidor, então precisa de nova busca.
+        $('#somente_pendentes').on('change', function () {
+            if (ultimaFoto) {
+                carregarFoto();
+            }
+        });
     });
 })(jQuery);

@@ -25,6 +25,7 @@ if ($dir === null || !is_dir($dir)) {
 define('OXI_TB_HISTORICO', 'HistoricoContato');
 define('OXI_TB_STATUS', 'StatusPrecatorio');
 define('OXI_TB_DETALHE', 'precatoriodetalhe');
+define('OXI_TB_BATCH', 'BatchControl');
 
 require __DIR__ . '/../src/oxigenacao_repository.php';
 
@@ -103,8 +104,9 @@ $pdo = new PDO('sqlite::memory:', null, null, [
 $qtdHistorico = carregar_csv($pdo, OXI_TB_HISTORICO, achar_csv($dir, 'historico_contato'));
 $qtdStatus    = carregar_csv($pdo, OXI_TB_STATUS, achar_csv($dir, 'status_precatorio'));
 $qtdDetalhe   = carregar_csv($pdo, OXI_TB_DETALHE, achar_csv($dir, 'view_precatorio_detalhe'));
+$qtdBatch     = carregar_csv($pdo, OXI_TB_BATCH, achar_csv($dir, 'historico_batch'));
 
-echo "Carga: {$qtdHistorico} contatos, {$qtdStatus} status, {$qtdDetalhe} precatórios.\n\n";
+echo "Carga: {$qtdHistorico} contatos, {$qtdStatus} status, {$qtdDetalhe} precatórios, {$qtdBatch} rodadas de batch.\n\n";
 
 $semTentativa = oxigenacao_status_sem_tentativa($pdo);
 sort($semTentativa);
@@ -343,6 +345,77 @@ $fotoHoje = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $hoje]));
 $stmt = $pdo->query('SELECT COUNT(*) AS Qtd FROM ' . OXI_TB_DETALHE);
 verificar('foto de hoje cobre todos os precatórios da view',
     $fotoHoje['totais']['qtd'] === (int)$stmt->fetch()['Qtd']);
+
+// ---------------------------------------------------------------------------
+// Reconstrução da quitação pelo histórico de lotes
+// ---------------------------------------------------------------------------
+
+echo "\nQuitação pelo histórico de lotes:\n";
+
+$cobertura = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => $hoje]));
+echo "  histórico de lotes começa em {$cobertura['inicio_historico']}; "
+    . "{$cobertura['quitados_com_data']} quitados com data, {$cobertura['quitados_sem_data']} sem.\n";
+
+verificar('início do histórico de lotes é identificado',
+    $cobertura['inicio_historico'] !== null);
+verificar('quitados com + sem data somam os quitados da amostra',
+    $cobertura['quitados_com_data'] + $cobertura['quitados_sem_data'] === count(array_filter(
+        $pdo->query('SELECT prec_pg FROM ' . OXI_TB_DETALHE)->fetchAll(),
+        function ($l) { return $l['prec_pg'] !== null; }
+    )));
+
+// As amostras de precatório e de batch não se cruzam (a view exportada tem
+// lotes antigos), então a rodada de quitação é montada aqui para exercitar o
+// JOIN e o recorte por data.
+$alvo = $pdo->query('SELECT EnteId, batch, COUNT(*) AS Qtd FROM ' . OXI_TB_DETALHE . "
+                     WHERE prec_pg IS NOT NULL AND batch IS NOT NULL AND CAST(batch AS SIGNED) <> 0
+                       AND EnteId IS NOT NULL
+                     GROUP BY EnteId, batch ORDER BY Qtd DESC")->fetch();
+
+$dataQuitacao = '2024-07-15';
+$pdo->prepare('INSERT INTO ' . OXI_TB_BATCH . ' (idBatchControl, data_batch, ente_id, n_batch_quit, qtd_quitados)
+               VALUES (?, ?, ?, ?, ?)')
+    ->execute([999001, $dataQuitacao, $alvo['EnteId'], $alvo['batch'], $alvo['Qtd']]);
+
+$antes  = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-07-01', 'somente_pendentes' => 1]));
+$depois = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
+$universoAntes  = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-07-01']));
+$universoDepois = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01']));
+
+verificar('o universo da foto não muda entre as duas datas (controle)',
+    $universoAntes['totais']['qtd'] === $universoDepois['totais']['qtd']);
+verificar('precatório quitado ainda conta como pendente antes da data do lote',
+    $antes['totais']['qtd'] - $depois['totais']['qtd'] === (int)$alvo['Qtd'],
+    "{$antes['totais']['qtd']} - {$depois['totais']['qtd']} != {$alvo['Qtd']}");
+
+$coberturaDepois = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => '2024-08-01']));
+verificar('a rodada registrada passa a contar como quitação com data',
+    $coberturaDepois['quitados_com_data'] === (int)$alvo['Qtd'],
+    "{$coberturaDepois['quitados_com_data']} != {$alvo['Qtd']}");
+
+// A quitação de um ente não pode vazar para precatórios de outro ente com o
+// mesmo número de lote.
+$pdo->prepare('INSERT INTO ' . OXI_TB_BATCH . ' (idBatchControl, data_batch, ente_id, n_batch_quit)
+               VALUES (?, ?, ?, ?)')
+    ->execute([999002, '2024-07-15', 999999, $alvo['batch']]);
+$depoisComRuido = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
+verificar('quitação de outro ente com o mesmo número de lote não vaza',
+    $depoisComRuido['totais']['qtd'] === $depois['totais']['qtd']);
+
+// Lote 0 é o valor padrão de quem nunca passou por batch: não pode quitar nada.
+$pdo->prepare('INSERT INTO ' . OXI_TB_BATCH . ' (idBatchControl, data_batch, ente_id, n_batch_quit)
+               VALUES (?, ?, ?, ?)')
+    ->execute([999003, '2024-07-15', $alvo['EnteId'], '0']);
+$depoisComZero = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
+verificar('lote 0 não é tratado como rodada de quitação',
+    $depoisComZero['totais']['qtd'] === $depois['totais']['qtd'],
+    "{$depoisComZero['totais']['qtd']} != {$depois['totais']['qtd']}");
+
+$pdo->exec('DELETE FROM ' . OXI_TB_BATCH . ' WHERE idBatchControl IN (999001, 999002, 999003)');
+$restaurado = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
+verificar('sem rodada registrada, o quitado segue fora dos pendentes',
+    $restaurado['totais']['qtd'] === $depois['totais']['qtd'],
+    "restaurado={$restaurado['totais']['qtd']} depois={$depois['totais']['qtd']}");
 
 // ---------------------------------------------------------------------------
 // Opções dos filtros (usadas na montagem da página)

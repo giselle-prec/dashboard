@@ -18,6 +18,7 @@ try {
             'linhas'      => $foto['linhas'],
             'totais'      => $foto['totais'],
             'status_mapa' => oxigenacao_mapa_status($pdo),
+            'cobertura'   => oxigenacao_cobertura_quitacao($pdo, $filtros),
         ]);
     } elseif ($acao === 'oxigenacao') {
         $filtros = oxigenacao_parse_filtros($_GET, 'periodo');

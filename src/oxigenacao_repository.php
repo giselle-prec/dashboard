@@ -17,7 +17,13 @@
 // - Mudanças de status feitas fora do fluxo de contato (ex.: "Pago pelo ente",
 //   "Pausado", alterações em lote) não estão no histórico, então a reconstrução
 //   da foto por data é aproximada para esses status.
-// - prec_pg (quitado x pendente de pagamento) é estado atual, sem data de virada.
+// - prec_pg diz se o precatório está quitado hoje, mas não guarda a data. A data
+//   vem do histórico de lotes: cada rodada de batch reserva três números
+//   (n_batch_new, n_batch_upd, n_batch_quit) e grava o número usado em
+//   Precatorio.batch, então Precatorio.batch = BatchControl.n_batch_quit (do
+//   mesmo ente) identifica a rodada que quitou o precatório, e data_batch é a
+//   data. Isso só cobre o período coberto pelo BatchControl; quitações
+//   anteriores continuam sem data e são reportadas como tal na tela.
 //
 // Desempenho: as consultas varrem HistoricoContato agrupando por precatório e
 // data. Se o painel ficar lento, os índices que resolvem são
@@ -30,6 +36,7 @@ require_once __DIR__ . '/prospeccao_repository.php';
 defined('OXI_TB_HISTORICO') || define('OXI_TB_HISTORICO', 'precappapp.HistoricoContato');
 defined('OXI_TB_STATUS')    || define('OXI_TB_STATUS',    'precappapp.StatusPrecatorio');
 defined('OXI_TB_DETALHE')   || define('OXI_TB_DETALHE',   'precappapp.precatoriodetalhe');
+defined('OXI_TB_BATCH')     || define('OXI_TB_BATCH',     'precappapp.BatchControl');
 
 // Máximo de linhas de detalhe devolvidas ao navegador (os agregados continuam
 // considerando o conjunto completo).
@@ -369,15 +376,82 @@ function oxigenacao_base_sem_tentativa(PDO $pdo, array $filtros) {
 // Aba 2 — foto por data
 // ---------------------------------------------------------------------------
 
-// Ponto único de decisão do que é "pendente de pagamento". Hoje usa o estado
-// atual (prec_pg IS NULL), porque não existe data de quitação no histórico de
-// contato. Quando a tabela de alterações em lote estiver disponível, é aqui que
-// a reconstrução por data entra.
-function oxigenacao_filtro_pendente_pagamento(array $filtros, array &$params, $alias = 'p') {
+// Data de quitação por precatório, derivada do histórico de lotes: a rodada de
+// batch cujo n_batch_quit foi gravado em Precatorio.batch (no mesmo ente) é a
+// que quitou o precatório. Números reaproveitados entre rodadas próximas são
+// resolvidos pela data mais antiga — na prática as rodadas em conflito estão a
+// no máximo um dia de distância.
+function oxigenacao_sql_quitacao() {
+    $batch = OXI_TB_BATCH;
+    return "
+        SELECT
+            CAST(b.n_batch_quit AS SIGNED) AS BatchQuit,
+            CAST(b.ente_id AS SIGNED)      AS EnteId,
+            MIN(b.data_batch)              AS DataQuitacao
+        FROM {$batch} b
+        WHERE b.n_batch_quit IS NOT NULL
+          AND CAST(b.n_batch_quit AS SIGNED) <> 0
+          AND b.ente_id IS NOT NULL
+          AND b.data_batch IS NOT NULL
+          AND b.data_batch <> ''
+        GROUP BY CAST(b.n_batch_quit AS SIGNED), CAST(b.ente_id AS SIGNED)
+    ";
+}
+
+// JOIN da data de quitação na view de detalhe. O CAST dos dois lados é
+// necessário porque BatchControl guarda os números como texto.
+function oxigenacao_join_quitacao($alias = 'p', $aliasQuit = 'q') {
+    return ' LEFT JOIN (' . oxigenacao_sql_quitacao() . ") {$aliasQuit}
+             ON {$aliasQuit}.BatchQuit = CAST({$alias}.batch AS SIGNED)
+            AND {$aliasQuit}.EnteId = CAST({$alias}.EnteId AS SIGNED) ";
+}
+
+// Ponto único de decisão do que é "pendente de pagamento" na data escolhida:
+// nunca quitado, ou quitado depois da data. Precatório quitado cuja rodada de
+// batch não está no histórico fica de fora — a contagem desses casos vai para
+// oxigenacao_cobertura_quitacao(), para a tela mostrar o tamanho da incerteza.
+function oxigenacao_filtro_pendente_pagamento(array $filtros, array &$params, $alias = 'p', $aliasQuit = 'q') {
     if (empty($filtros['somente_pendentes'])) {
         return '';
     }
-    return " AND {$alias}.prec_pg IS NULL";
+    $params[] = $filtros['data_ref'];
+    return " AND ({$alias}.prec_pg IS NULL OR {$aliasQuit}.DataQuitacao > ?)";
+}
+
+// Quanto da reconstrução de quitação é confiável para os filtros escolhidos.
+function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
+    $detalhe = OXI_TB_DETALHE;
+    $batch   = OXI_TB_BATCH;
+
+    $inicio = $pdo->query("
+        SELECT MIN(b.data_batch) AS Inicio
+        FROM {$batch} b
+        WHERE b.n_batch_quit IS NOT NULL
+          AND CAST(b.n_batch_quit AS SIGNED) <> 0
+          AND b.data_batch IS NOT NULL
+          AND b.data_batch <> ''
+    ")->fetch();
+
+    $sql = "
+        SELECT
+            SUM(CASE WHEN q.DataQuitacao IS NULL THEN 1 ELSE 0 END)     AS SemData,
+            SUM(CASE WHEN q.DataQuitacao IS NOT NULL THEN 1 ELSE 0 END) AS ComData
+        FROM {$detalhe} p
+    " . oxigenacao_join_quitacao() . '
+        WHERE p.prec_pg IS NOT NULL
+    ';
+    $params = [];
+    $sql .= oxigenacao_where_precatorio($filtros, $params);
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $linha = $stmt->fetch();
+
+    return [
+        'inicio_historico'   => $inicio['Inicio'] ?? null,
+        'quitados_com_data'  => (int)($linha['ComData'] ?? 0),
+        'quitados_sem_data'  => (int)($linha['SemData'] ?? 0),
+    ];
 }
 
 // Quantidade e valor de precatórios em cada status na data escolhida.
@@ -417,6 +491,7 @@ function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
             ) ulti ON ulti.UltId = h2.historicoContato_id
         ) ult ON ult.PrecatorioId = p.precatorio_id
         LEFT JOIN {$status} s ON s.statusPrecatorio_id = ult.ResultContatoId
+    " . oxigenacao_join_quitacao() . "
         WHERE (p.DataCadastra IS NULL OR p.DataCadastra < ?)
     ";
 

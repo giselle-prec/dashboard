@@ -207,7 +207,7 @@
                 <div class="col-md-3 form-check ms-3">
                     <input type="checkbox" class="form-check-input" id="somente_pendentes" checked>
                     <label class="form-check-label" for="somente_pendentes">
-                        Somente pendentes de pagamento
+                        Somente pendentes de pagamento na data
                     </label>
                 </div>
                 <div class="col-md-2 form-check ms-2">
@@ -218,6 +218,8 @@
                     <button type="submit" class="btn btn-primary w-100">Buscar</button>
                 </div>
             </form>
+
+            <div id="aviso-cobertura" class="alert alert-info d-none" role="alert"></div>
 
             <div class="row g-3 mb-4">
                 <div class="col-md-4">
@@ -254,8 +256,10 @@
                 aparece como <em>Sem Tentativa</em>.</li>
             <li>Mudanças feitas fora do fluxo de contato (ex.: <em>Pago pelo ente</em>, <em>Pausado</em>, alterações em
                 lote) não estão no histórico e não são reconstruídas.</li>
-            <li>&quot;Pendentes de pagamento&quot; usa <code>prec_pg</code>, que é a situação <strong>atual</strong> —
-                não existe data de quitação no histórico de contato.</li>
+            <li>&quot;Pendentes de pagamento na data&quot; combina <code>prec_pg</code> com a data da rodada de batch que
+                quitou o precatório (<code>Precatorio.batch</code> = <code>BatchControl.n_batch_quit</code> do mesmo
+                ente). Quitações anteriores ao histórico de lotes não têm data e entram como já quitadas — a
+                quantidade nessa situação aparece no aviso acima do gráfico.</li>
         </ul>
     </div>
 </div>
