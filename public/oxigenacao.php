@@ -20,8 +20,9 @@
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
 <style>
-    /* Espaço para a legenda do gráfico de status, que fica à direita. */
-    #chart-status-destino {
+    /* Espaço para a legenda dos gráficos de status, que fica à direita. */
+    #chart-status-destino,
+    #chart-foto {
         height: 380px;
     }
 </style>
@@ -59,12 +60,22 @@
                     </label>
                     <select class="form-select select2-multi" id="consultor_id" name="consultor_id[]" multiple
                             data-placeholder="Todos os consultores">
-                        <?php foreach ($consultores as $consultor): ?>
-                        <option value="<?php echo htmlspecialchars($consultor['Negociador']); ?>"><?php
-                            echo htmlspecialchars(trim($consultor['FirstName'] . ' ' . (string)$consultor['LastName']));
+                        <?php foreach ($consultores as $consultor):
+                            $ativo = (string)$consultor['Active'] === '1';
+                            $nome = trim($consultor['FirstName'] . ' ' . (string)$consultor['LastName']);
+                        ?>
+                        <option value="<?php echo htmlspecialchars($consultor['Negociador']); ?>"
+                                data-ativo="<?php echo $ativo ? '1' : '0'; ?>"><?php
+                            echo htmlspecialchars($ativo ? $nome : $nome . ' (inativo)');
                         ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="incluir_consultores_inativos">
+                        <label class="form-check-label small" for="incluir_consultores_inativos">
+                            Incluir consultores inativos
+                        </label>
+                    </div>
                     <div class="form-text">Consultor atual do precatório</div>
                 </div>
                 <div class="col-md-2">
@@ -300,7 +311,17 @@
 
             <div class="row g-3 mb-4">
                 <div class="col-12">
-                    <div id="chart-foto" style="height: 420px;"></div>
+                    <div id="chart-foto"></div>
+                    <div class="form-text text-center">
+                        Sem Tentativa fica fora do gráfico (está no card acima). Clique em uma fatia para ver a
+                        quebra por ente e por consultor daquele status.
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div id="chart-foto-ente" style="height: 350px;"></div>
+                </div>
+                <div class="col-md-6">
+                    <div id="chart-foto-consultor" style="height: 350px;"></div>
                 </div>
             </div>
 

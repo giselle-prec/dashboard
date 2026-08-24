@@ -50,6 +50,10 @@ defined('OXI_TB_BATCH')      || define('OXI_TB_BATCH',      'precappapp.BatchCon
 defined('OXI_TB_PRECATORIO') || define('OXI_TB_PRECATORIO', 'precappapp.Precatorio');
 defined('OXI_TB_NATUREZA')   || define('OXI_TB_NATUREZA',   'precappapp.NaturezaPrec');
 defined('OXI_TB_USUARIO')    || define('OXI_TB_USUARIO',    'precappapp.Usuario');
+defined('OXI_TB_ENTE')       || define('OXI_TB_ENTE',       'precappapp.Ente');
+
+// Perfil de consultor na tabela de usuários.
+const OXI_PERFIL_CONSULTOR = 2;
 
 // Coluna com a data em que o tribunal quitou o precatório. Ainda não existe em
 // todas as bases: quando estiver ausente, a reconstrução cai para o histórico
@@ -323,13 +327,19 @@ function oxigenacao_eventos(PDO $pdo, array $filtros) {
     return $linhas;
 }
 
-// Soma um evento em um balde de agregação.
-function oxigenacao_acumular(array &$destino, $chave, $rotulo, $valor) {
+// Soma uma quantidade já apurada em um balde de agregação.
+function oxigenacao_somar_agregado(array &$destino, $chave, $rotulo, $qtd, $valor) {
+    $chave = ($chave === null || $chave === '') ? '0' : (string)$chave;
     if (!isset($destino[$chave])) {
         $destino[$chave] = ['rotulo' => $rotulo, 'qtd' => 0, 'valor' => 0.0];
     }
-    $destino[$chave]['qtd']++;
+    $destino[$chave]['qtd'] += $qtd;
     $destino[$chave]['valor'] += $valor;
+}
+
+// Soma um evento (uma unidade) em um balde de agregação.
+function oxigenacao_acumular(array &$destino, $chave, $rotulo, $valor) {
+    oxigenacao_somar_agregado($destino, $chave, $rotulo, 1, $valor);
 }
 
 // Ordena por valor decrescente e devolve lista simples (pronta para JSON).
@@ -689,6 +699,90 @@ function oxigenacao_foto_reconstruida(PDO $pdo, array $filtros) {
     return $linhas;
 }
 
+// Quebra por ente e por consultor de cada status da foto, para o detalhamento
+// ao clicar numa fatia. Uma consulta só: agrupa por status/ente/consultor e o
+// PHP colapsa nos dois recortes. Os status da família "Sem Tentativa" ficam de
+// fora porque não vão ao gráfico — e é justamente o que torna esta consulta
+// barata, já que são a maior parte da base.
+function oxigenacao_foto_cruzamentos(PDO $pdo, array $filtros) {
+    $precatorio = OXI_TB_PRECATORIO;
+    $ente       = OXI_TB_ENTE;
+    $usuario    = OXI_TB_USUARIO;
+
+    $semTentativa = oxigenacao_status_sem_tentativa($pdo);
+    $ph = oxigenacao_placeholders($semTentativa);
+    $usaStatusAtual = $filtros['data_ref'] >= date('Y-m-d');
+
+    $colunaStatus = $usaStatusAtual ? 'p.StatusId' : 'ult.ResultContatoId';
+    $params = [];
+    $origem = '';
+
+    if (!$usaStatusAtual) {
+        $params[] = oxigenacao_dia_seguinte($filtros['data_ref']);
+        $origem = 'FROM (' . oxigenacao_sql_ultimo_contato() . ") ult
+                   JOIN {$precatorio} p ON p.precatorio_id = ult.PrecatorioId ";
+    } else {
+        $origem = "FROM {$precatorio} p ";
+    }
+
+    $interno = "
+        SELECT
+            {$colunaStatus} AS StatusId,
+            p.EnteId        AS EnteId,
+            p.Negociador    AS Negociador,
+            COUNT(*)        AS Qtd,
+            COALESCE(SUM(CAST(p.ValorPrec AS DECIMAL(15,2))), 0) AS Valor
+        {$origem}
+    " . oxigenacao_join_quitacao_se_preciso($filtros) . '
+        WHERE ' . oxigenacao_filtro_existia_na_data($filtros, $params);
+
+    $interno .= oxigenacao_where_precatorio($filtros, $params);
+    $interno .= oxigenacao_filtro_pendente_pagamento($pdo, $filtros, $params);
+    // NULL cai fora junto: sem status, o precatório é rotulado "Sem Tentativa"
+    // na pizza, que é exatamente o que este cruzamento não cobre.
+    $interno .= " AND {$colunaStatus} NOT IN ({$ph})";
+    $params = array_merge($params, $semTentativa);
+    $interno .= " GROUP BY {$colunaStatus}, p.EnteId, p.Negociador";
+
+    // Os nomes entram depois da agregação, sobre um punhado de linhas.
+    $sql = '
+        SELECT ' . OXI_HINT_TIMEOUT . "
+            c.StatusId, c.EnteId, c.Negociador, c.Qtd, c.Valor,
+            e.Ente      AS Ente,
+            u.FirstName AS Consultor
+        FROM ({$interno}) c
+        LEFT JOIN {$ente} e    ON e.ente_id = c.EnteId
+        LEFT JOIN {$usuario} u ON u.usuario_id = c.Negociador
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    $porEnte = [];
+    $porConsultor = [];
+    foreach ($stmt->fetchAll() as $linha) {
+        $statusId = (string)$linha['StatusId'];
+        $valor = (float)$linha['Valor'];
+        $qtd = (int)$linha['Qtd'];
+
+        if (!isset($porEnte[$statusId])) {
+            $porEnte[$statusId] = [];
+            $porConsultor[$statusId] = [];
+        }
+        oxigenacao_somar_agregado($porEnte[$statusId], $linha['EnteId'],
+            $linha['Ente'] !== null ? $linha['Ente'] : '(sem ente)', $qtd, $valor);
+        oxigenacao_somar_agregado($porConsultor[$statusId], $linha['Negociador'],
+            $linha['Consultor'] !== null ? $linha['Consultor'] : '(sem consultor)', $qtd, $valor);
+    }
+
+    foreach ($porEnte as $statusId => $entes) {
+        $porEnte[$statusId] = oxigenacao_ordenar_agregado($entes, 'qtd');
+        $porConsultor[$statusId] = oxigenacao_ordenar_agregado($porConsultor[$statusId], 'qtd');
+    }
+
+    return ['por_status_ente' => $porEnte, 'por_status_consultor' => $porConsultor];
+}
+
 // Quantidade e valor de precatórios em cada status na data escolhida.
 function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
     $usaStatusAtual = $filtros['data_ref'] >= date('Y-m-d');
@@ -763,13 +857,16 @@ function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
 // Opções dos filtros
 // ---------------------------------------------------------------------------
 
-// Mapa statusPrecatorio_id => nome, usado no cliente para agrupar os status
-// filhos sob o nome do status pai.
+// Mapa statusPrecatorio_id => nome e pai, usado no cliente para rotular os
+// cruzamentos e para agrupar os status filhos sob o nome do status pai.
 function oxigenacao_mapa_status(PDO $pdo) {
-    $sql = 'SELECT statusPrecatorio_id, Status FROM ' . OXI_TB_STATUS;
+    $sql = 'SELECT statusPrecatorio_id, Status, ParentId FROM ' . OXI_TB_STATUS;
     $mapa = [];
     foreach ($pdo->query($sql)->fetchAll() as $linha) {
-        $mapa[(string)$linha['statusPrecatorio_id']] = $linha['Status'];
+        $mapa[(string)$linha['statusPrecatorio_id']] = [
+            'nome' => $linha['Status'],
+            'pai'  => $linha['ParentId'] === null ? null : (string)$linha['ParentId'],
+        ];
     }
     return $mapa;
 }
@@ -800,8 +897,13 @@ function oxigenacao_opcoes_natureza(PDO $pdo) {
 
 // Consultores vêm da tabela de usuários, não de um DISTINCT sobre a view: a
 // lista é montada a cada abertura da página e a view é cara de varrer.
+// Só perfil de consultor entra; os inativos vêm junto marcados, para a tela
+// poder mostrá-los ou não sem ir ao banco de novo.
 function oxigenacao_opcoes_consultor(PDO $pdo) {
-    $sql = 'SELECT usuario_id AS Negociador, FirstName, LastName FROM ' . OXI_TB_USUARIO . '
-            WHERE FirstName IS NOT NULL ORDER BY FirstName';
+    $sql = 'SELECT usuario_id AS Negociador, FirstName, LastName, Active
+            FROM ' . OXI_TB_USUARIO . '
+            WHERE PerfilId = ' . OXI_PERFIL_CONSULTOR . '
+              AND FirstName IS NOT NULL
+            ORDER BY Active DESC, FirstName';
     return $pdo->query($sql)->fetchAll();
 }

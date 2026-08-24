@@ -11,6 +11,7 @@ try {
     if ($acao === 'foto') {
         $filtros = oxigenacao_parse_filtros($_GET, 'foto');
         $foto = oxigenacao_foto_por_data($pdo, $filtros);
+        $cruzamentos = oxigenacao_foto_cruzamentos($pdo, $filtros);
 
         // A cobertura da reconstrução de quitação custa uma varredura inteira e
         // só é exibida quando o recorte de pendentes está ligado.
@@ -21,6 +22,8 @@ try {
             'totais'           => $foto['totais'],
             'usa_status_atual' => $foto['usa_status_atual'],
             'status_mapa'      => oxigenacao_mapa_status($pdo),
+            'por_status_ente'      => $cruzamentos['por_status_ente'],
+            'por_status_consultor' => $cruzamentos['por_status_consultor'],
             'cobertura'        => $filtros['somente_pendentes']
                 ? oxigenacao_cobertura_quitacao($pdo, $filtros)
                 : null,

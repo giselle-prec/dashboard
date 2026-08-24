@@ -29,6 +29,7 @@ define('OXI_TB_BATCH', 'BatchControl');
 define('OXI_TB_PRECATORIO', 'Precatorio');
 define('OXI_TB_USUARIO', 'Usuario');
 define('OXI_TB_NATUREZA', 'NaturezaPrec');
+define('OXI_TB_ENTE', 'Ente');
 
 require __DIR__ . '/../src/oxigenacao_repository.php';
 
@@ -114,9 +115,22 @@ $qtdBatch     = carregar_csv($pdo, OXI_TB_BATCH, achar_csv($dir, 'historico_batc
 // página usa para montar os filtros.
 $pdo->exec('CREATE TABLE ' . OXI_TB_PRECATORIO . ' AS SELECT *, NULL AS ' . OXI_COL_DATA_QUITACAO
     . ' FROM ' . OXI_TB_DETALHE);
+// A exportação da view não traz PerfilId nem Active; o filtro de consultores
+// depende dos dois, então são simulados aqui: um usuário inativo e um de outro
+// perfil, para o filtro ter o que descartar.
 $pdo->exec('CREATE TABLE ' . OXI_TB_USUARIO . ' AS
-            SELECT DISTINCT usuario_id, FirstName, LastName FROM ' . OXI_TB_DETALHE . '
-            WHERE usuario_id IS NOT NULL');
+            SELECT DISTINCT usuario_id, FirstName, LastName,
+                   ' . OXI_PERFIL_CONSULTOR . ' AS PerfilId, 1 AS Active
+            FROM ' . OXI_TB_DETALHE . ' WHERE usuario_id IS NOT NULL');
+$usuarioInativo = (int)$pdo->query('SELECT usuario_id FROM ' . OXI_TB_USUARIO . '
+                                    ORDER BY usuario_id LIMIT 1')->fetch()['usuario_id'];
+$usuarioOutroPerfil = (int)$pdo->query('SELECT usuario_id FROM ' . OXI_TB_USUARIO . '
+                                        ORDER BY usuario_id DESC LIMIT 1')->fetch()['usuario_id'];
+$pdo->exec('UPDATE ' . OXI_TB_USUARIO . " SET Active = 0 WHERE usuario_id = {$usuarioInativo}");
+$pdo->exec('UPDATE ' . OXI_TB_USUARIO . " SET PerfilId = 9 WHERE usuario_id = {$usuarioOutroPerfil}");
+
+$pdo->exec('CREATE TABLE ' . OXI_TB_ENTE . ' AS
+            SELECT DISTINCT ente_id, Ente FROM ' . OXI_TB_DETALHE . ' WHERE ente_id IS NOT NULL');
 $pdo->exec('CREATE TABLE ' . OXI_TB_NATUREZA . ' AS
             SELECT DISTINCT NaturezaId AS natuPrec_id, Natureza FROM ' . OXI_TB_DETALHE . '
             WHERE NaturezaId IS NOT NULL');
@@ -575,10 +589,62 @@ verificar('orçamentos inválidos ficam fora da lista',
 verificar('orçamentos vêm do mais recente para o mais antigo', $anos === array_reverse(array_values(array_unique($anos))) || $anos[0] >= $anos[count($anos) - 1]);
 
 $opcoesConsultor = oxigenacao_opcoes_consultor($pdo);
+$idsConsultor = array_map('intval', array_column($opcoesConsultor, 'Negociador'));
 verificar('lista de consultores vem preenchida', count($opcoesConsultor) > 0);
 verificar('consultores têm id e nome',
     !array_filter($opcoesConsultor, function ($c) {
         return $c['Negociador'] === null || $c['FirstName'] === null;
+    }));
+verificar('usuário de outro perfil fica fora da lista',
+    !in_array($usuarioOutroPerfil, $idsConsultor, true));
+verificar('consultor inativo vem na lista, marcado como inativo',
+    in_array($usuarioInativo, $idsConsultor, true)
+    && (int)array_values(array_filter($opcoesConsultor, function ($c) use ($usuarioInativo) {
+        return (int)$c['Negociador'] === $usuarioInativo;
+    }))[0]['Active'] === 0);
+verificar('ativos vêm antes dos inativos',
+    (int)$opcoesConsultor[0]['Active'] === 1
+    && (int)$opcoesConsultor[count($opcoesConsultor) - 1]['Active'] === 0);
+
+// Cruzamentos da foto, que alimentam os dois gráficos de barra.
+$cruzamentos = oxigenacao_foto_cruzamentos($pdo, filtros(['data_ref' => $dataRef]));
+$fotoCruz = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $dataRef]));
+
+verificar('cruzamentos cobrem os mesmos status do gráfico',
+    count($cruzamentos['por_status_ente']) === count(array_filter($fotoCruz['linhas'],
+        function ($l) { return !$l['SemTentativa']; })),
+    count($cruzamentos['por_status_ente']) . ' vs ' . count(array_filter($fotoCruz['linhas'],
+        function ($l) { return !$l['SemTentativa']; })));
+
+verificar('Sem Tentativa não entra nos cruzamentos',
+    !array_filter(array_keys($cruzamentos['por_status_ente']), function ($id) use ($semTentativa) {
+        return in_array((int)$id, $semTentativa, true);
+    }));
+
+$somaCruzEnte = 0;
+$somaCruzCons = 0;
+foreach ($cruzamentos['por_status_ente'] as $statusId => $entes) {
+    $somaCruzEnte += array_sum(array_column($entes, 'qtd'));
+    $somaCruzCons += array_sum(array_column($cruzamentos['por_status_consultor'][$statusId], 'qtd'));
+}
+verificar('os dois cruzamentos somam os demais status da foto',
+    $somaCruzEnte === $fotoCruz['totais']['outros_qtd']
+    && $somaCruzCons === $fotoCruz['totais']['outros_qtd'],
+    "ente={$somaCruzEnte} consultor={$somaCruzCons} esperado={$fotoCruz['totais']['outros_qtd']}");
+
+$cruzHoje = oxigenacao_foto_cruzamentos($pdo, filtros(['data_ref' => $hoje]));
+$fotoHojeCruz = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $hoje]));
+$somaHoje = 0;
+foreach ($cruzHoje['por_status_ente'] as $entes) {
+    $somaHoje += array_sum(array_column($entes, 'qtd'));
+}
+verificar('cruzamento também fecha no caminho do status atual',
+    $somaHoje === $fotoHojeCruz['totais']['outros_qtd'],
+    "{$somaHoje} != {$fotoHojeCruz['totais']['outros_qtd']}");
+
+verificar('cruzamento traz o nome do ente e do consultor, não só o id',
+    !array_filter($cruzHoje['por_status_ente'], function ($entes) {
+        return array_filter($entes, function ($e) { return $e['rotulo'] === null || $e['rotulo'] === ''; });
     }));
 
 $opcoesNatureza = oxigenacao_opcoes_natureza($pdo);
@@ -589,7 +655,9 @@ verificar('lista de naturezas vem preenchida com id e nome',
 
 $mapaStatus = oxigenacao_mapa_status($pdo);
 verificar('mapa de status resolve o nome do status pai',
-    ($mapaStatus['1'] ?? null) === OXI_ROTULO_SEM_TENTATIVA, $mapaStatus['1'] ?? '(ausente)');
+    ($mapaStatus['1']['nome'] ?? null) === OXI_ROTULO_SEM_TENTATIVA, $mapaStatus['1']['nome'] ?? '(ausente)');
+verificar('mapa de status traz o pai de cada status filho',
+    ($mapaStatus['65']['pai'] ?? null) === '1' && $mapaStatus['1']['pai'] === null);
 
 // ---------------------------------------------------------------------------
 // Validação de entrada

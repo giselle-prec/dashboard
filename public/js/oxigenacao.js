@@ -14,8 +14,9 @@
     var tabelaEventos = null;
     var tabelaFoto = null;
 
-    // Status escolhido na pizza de destino, que alimenta a quebra por ente.
+    // Status escolhido na pizza de cada aba, que alimenta as quebras de baixo.
     var statusSelecionado = null;
+    var statusFotoSelecionado = null;
 
     function formatarMoeda(valor) {
         return moedaFormatter.format(Number(valor) || 0);
@@ -198,17 +199,15 @@
         desenhar(id, chart);
     }
 
-    function graficoStatusDestino(dados, metrica) {
-        var series = dados.map(function (linha) {
-            return { x: linha.rotulo, value: linha[metrica] };
-        });
-
+    // Pizza de status com legenda à direita (ocupa a linha inteira) e clique
+    // para escolher o status detalhado nos dois gráficos de baixo. Serve às duas
+    // abas: cada uma passa o próprio id de contêiner e o que fazer no clique.
+    function graficoPizzaStatus(id, series, titulo, metrica, aoClicar) {
         var chart = anychart.pie(series);
-        chart.title('Status de destino da oxigenação — ' + rotuloMetrica(metrica));
+        chart.title(titulo);
         chart.tooltip().format(function () {
             return formatarMetrica(this.value, metrica);
         });
-        // O gráfico ocupa a linha inteira, então a legenda cabe à direita.
         chart.legend()
             .position('right')
             .itemsLayout('vertical')
@@ -220,21 +219,18 @@
             } else if (e.iterator && typeof e.iterator.get === 'function') {
                 status = e.iterator.get('x');
             }
-            if (!status) {
-                return;
+            if (status) {
+                aoClicar(status);
             }
-            // Clicar de novo no mesmo status desfaz a seleção.
-            statusSelecionado = (statusSelecionado === status) ? null : status;
-            graficosDoStatus(metricaPeriodo());
         });
-        desenhar('chart-status-destino', chart);
+        desenhar(id, chart);
     }
 
     // Detalhamento do status escolhido na pizza, em um dos dois recortes.
-    function graficoDetalheStatus(id, cruzamento, titulo, metrica) {
+    function graficoDetalheStatus(id, dados, titulo, metrica, selecionado) {
         var container = $('#' + id);
 
-        if (!statusSelecionado || !ultimoPeriodo) {
+        if (!selecionado) {
             if (charts[id]) {
                 charts[id].dispose();
                 delete charts[id];
@@ -247,13 +243,16 @@
         }
 
         container.empty();
-        var dados = ((ultimoPeriodo[cruzamento] || {})[statusSelecionado]) || [];
-        graficoBarras(id, dados, titulo + ' — "' + statusSelecionado + '"', metrica, TOP_ENTES);
+        graficoBarras(id, dados || [], titulo + ' — "' + selecionado + '"', metrica, TOP_ENTES);
     }
 
     function graficosDoStatus(metrica) {
-        graficoDetalheStatus('chart-status-ente', 'por_status_ente', 'Por ente', metrica);
-        graficoDetalheStatus('chart-status-consultor', 'por_status_consultor', 'Por consultor', metrica);
+        var cruzEnte = ultimoPeriodo && (ultimoPeriodo.por_status_ente || {})[statusSelecionado];
+        var cruzCons = ultimoPeriodo && (ultimoPeriodo.por_status_consultor || {})[statusSelecionado];
+        graficoDetalheStatus('chart-status-ente', cruzEnte, 'Por ente', metrica,
+            ultimoPeriodo ? statusSelecionado : null);
+        graficoDetalheStatus('chart-status-consultor', cruzCons, 'Por consultor', metrica,
+            ultimoPeriodo ? statusSelecionado : null);
     }
 
     function colunasEventos() {
@@ -320,7 +319,19 @@
         graficoTempo(ultimoPeriodo.por_dia, granularidade, metrica);
         graficoBarras('chart-ente', ultimoPeriodo.por_ente, 'Top ' + TOP_ENTES + ' entes', metrica, TOP_ENTES);
         graficoBarras('chart-consultor', ultimoPeriodo.por_consultor, 'Por consultor', metrica);
-        graficoStatusDestino(ultimoPeriodo.por_status_destino, metrica);
+        graficoPizzaStatus(
+            'chart-status-destino',
+            ultimoPeriodo.por_status_destino.map(function (linha) {
+                return { x: linha.rotulo, value: linha[metrica] };
+            }),
+            'Status de destino da oxigenação — ' + rotuloMetrica(metrica),
+            metrica,
+            function (status) {
+                // Clicar de novo no mesmo status desfaz a seleção.
+                statusSelecionado = (statusSelecionado === status) ? null : status;
+                graficosDoStatus(metricaPeriodo());
+            }
+        );
 
         // Um status selecionado numa busca anterior pode não existir na nova.
         if (statusSelecionado && !(ultimoPeriodo.por_status_ente || {})[statusSelecionado]) {
@@ -366,8 +377,51 @@
     // ------------------------------------------------------------------
 
     function nomeStatus(resposta, statusId) {
-        var mapa = resposta.status_mapa || {};
-        return mapa[statusId] || ('Status #' + statusId);
+        var info = (resposta.status_mapa || {})[statusId];
+        return (info && info.nome) || ('Status #' + statusId);
+    }
+
+    // Os cruzamentos vêm por id de status; a pizza mostra rótulos, que podem ser
+    // o do próprio status ou o do pai, conforme o agrupamento escolhido. Esta
+    // função junta os ids que caem sob o rótulo clicado.
+    function cruzamentoDoRotulo(cruzamento, rotulo) {
+        var mapa = ultimaFoto.status_mapa || {};
+        var agrupando = $('#agrupar_pai').is(':checked');
+        var baldes = {};
+
+        Object.keys(cruzamento).forEach(function (statusId) {
+            var info = mapa[statusId];
+            var nome;
+            if (!info) {
+                nome = 'Status #' + statusId;
+            } else if (agrupando && info.pai && mapa[info.pai]) {
+                nome = mapa[info.pai].nome;
+            } else {
+                nome = info.nome;
+            }
+            if (nome !== rotulo) {
+                return;
+            }
+            cruzamento[statusId].forEach(function (item) {
+                if (!baldes[item.rotulo]) {
+                    baldes[item.rotulo] = { rotulo: item.rotulo, qtd: 0, valor: 0 };
+                }
+                baldes[item.rotulo].qtd += item.qtd;
+                baldes[item.rotulo].valor += item.valor;
+            });
+        });
+
+        return Object.keys(baldes).map(function (chave) { return baldes[chave]; });
+    }
+
+    function graficosDaFoto(metrica) {
+        var selecionado = ultimaFoto ? statusFotoSelecionado : null;
+        graficoDetalheStatus('chart-foto-ente',
+            selecionado ? cruzamentoDoRotulo(ultimaFoto.por_status_ente || {}, selecionado) : null,
+            'Por ente', metrica, selecionado);
+        graficoDetalheStatus('chart-foto-consultor',
+            selecionado ? cruzamentoDoRotulo(ultimaFoto.por_status_consultor || {}, selecionado) : null,
+            'Por consultor', metrica, selecionado);
     }
 
     // Agrega os status filhos no status pai, quando pedido. O agrupamento é
@@ -498,13 +552,24 @@
             return { x: linha.Status, value: linha[campo] };
         });
 
-        var chart = anychart.bar(series);
-        chart.title('Status em ' + formatarData(ultimaFoto.data_ref) + ', exceto Sem Tentativa — ' +
-            rotuloMetrica(metrica));
-        chart.tooltip().format(function () {
-            return formatarMetrica(this.value, metrica);
-        });
-        desenhar('chart-foto', chart);
+        graficoPizzaStatus(
+            'chart-foto',
+            series,
+            'Status em ' + formatarData(ultimaFoto.data_ref) + ', exceto Sem Tentativa — ' + rotuloMetrica(metrica),
+            metrica,
+            function (status) {
+                statusFotoSelecionado = (statusFotoSelecionado === status) ? null : status;
+                graficosDaFoto(metrica);
+            }
+        );
+
+        // Um status escolhido numa busca anterior pode não existir na nova.
+        if (statusFotoSelecionado && !linhas.some(function (linha) {
+            return !linha.SemTentativa && linha.Status === statusFotoSelecionado;
+        })) {
+            statusFotoSelecionado = null;
+        }
+        graficosDaFoto(metrica);
 
         var colunas = [
             { data: 'Status', title: 'Status' },
@@ -571,9 +636,52 @@
         });
     }
 
+    // Consultores inativos ficam fora da lista por padrão. As opções são
+    // guardadas destacadas do DOM e reinseridas na posição original quando a
+    // caixa é marcada; ao desmarcar, uma seleção de inativo é desfeita junto,
+    // senão o filtro continuaria valendo sem aparecer na tela.
+    function ligarConsultoresInativos() {
+        var select = $('#consultor_id');
+        var caixa = $('#incluir_consultores_inativos');
+        if (!select.length || !caixa.length) {
+            return;
+        }
+
+        var inativos = select.find('option[data-ativo="0"]').map(function () {
+            return { elemento: $(this), indice: $(this).index() };
+        }).get();
+
+        function aplicar() {
+            if (caixa.is(':checked')) {
+                inativos.forEach(function (opcao) {
+                    var irmaos = select.children();
+                    if (opcao.indice >= irmaos.length) {
+                        select.append(opcao.elemento);
+                    } else {
+                        irmaos.eq(opcao.indice).before(opcao.elemento);
+                    }
+                });
+            } else {
+                var selecionados = select.val() || [];
+                inativos.forEach(function (opcao) {
+                    var valor = opcao.elemento.val();
+                    selecionados = selecionados.filter(function (v) { return v !== valor; });
+                    opcao.elemento.detach();
+                });
+                select.val(selecionados);
+            }
+            select.trigger('change');
+        }
+
+        aplicar();
+        caixa.on('change', aplicar);
+    }
+
     $(function () {
+        ligarConsultoresInativos();
         ligarSelect2();
         graficosDoStatus(metricaPeriodo());
+        graficosDaFoto('qtd');
 
         $('#form-periodo').on('submit', function (e) {
             e.preventDefault();
