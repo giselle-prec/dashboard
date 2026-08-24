@@ -37,6 +37,7 @@ try {
             'por_ente'            => $agregados['por_ente'],
             'por_consultor'       => $agregados['por_consultor'],
             'por_status_destino'  => $agregados['por_status_destino'],
+            'por_status_ente'     => $agregados['por_status_ente'],
             'eventos'             => $truncado ? array_slice($eventos, 0, OXI_LIMITE_DETALHE) : $eventos,
             'eventos_truncados'   => $truncado,
             'limite_detalhe'      => OXI_LIMITE_DETALHE,
@@ -48,6 +49,9 @@ try {
     http_response_code(422);
     echo json_encode(['ok' => false, 'erro' => $e->getMessage()]);
 } catch (Throwable $e) {
+    // Sem o log, uma falha aqui chega ao navegador como resposta vazia e não
+    // sobra rastro nenhum para diagnosticar.
+    error_log('api/oxigenacao.php: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['ok' => false, 'erro' => 'Erro ao consultar os dados.']);
 }

@@ -6,6 +6,7 @@
     $read_ente   = DBread($pdo, 'Ente', 'ORDER BY Ente');
     $orcamentos  = oxigenacao_opcoes_orcamento($pdo);
     $consultores = oxigenacao_opcoes_consultor($pdo);
+    $naturezas   = oxigenacao_opcoes_natureza($pdo);
 
     $hoje       = date('Y-m-d');
     $inicio_mes = date('Y-m-01');
@@ -31,54 +32,63 @@
             <div class="row g-3">
                 <div class="col-md-3">
                     <label for="ente_id" class="form-label">Ente</label>
-                    <select class="form-select" id="ente_id" name="ente_id" multiple size="5">
+                    <input type="search" class="form-control form-control-sm mb-1" id="busca_ente"
+                           placeholder="Buscar ente..." data-filtra="#ente_id" autocomplete="off">
+                    <select class="form-select" id="ente_id" name="ente_id" multiple size="6">
                         <?php foreach ($read_ente as $ente): ?>
                         <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                         <?php endforeach; ?>
                     </select>
                     <div class="form-text">Nenhum selecionado = todos</div>
                 </div>
-                <div class="col-md-2">
-                    <label for="orcamento" class="form-label">Orçamento</label>
-                    <select class="form-select" id="orcamento" name="orcamento" multiple size="5">
-                        <?php foreach ($orcamentos as $orcamento): ?>
-                        <option value="<?php echo htmlspecialchars($orcamento['Orcamento']); ?>"><?php echo htmlspecialchars($orcamento['Orcamento']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div class="form-text">Nenhum selecionado = todos</div>
-                </div>
                 <div class="col-md-3">
                     <label for="consultor_id" class="form-label">Consultor</label>
-                    <select class="form-select" id="consultor_id" name="consultor_id" multiple size="5">
+                    <input type="search" class="form-control form-control-sm mb-1" id="busca_consultor"
+                           placeholder="Buscar consultor..." data-filtra="#consultor_id" autocomplete="off">
+                    <select class="form-select" id="consultor_id" name="consultor_id" multiple size="6">
                         <?php foreach ($consultores as $consultor): ?>
-                        <option value="<?php echo htmlspecialchars($consultor['Negociador']); ?>">
-                            <?php echo htmlspecialchars(trim($consultor['FirstName'] . ' ' . (string)$consultor['LastName'])); ?>
-                        </option>
+                        <option value="<?php echo htmlspecialchars($consultor['Negociador']); ?>"><?php
+                            echo htmlspecialchars(trim($consultor['FirstName'] . ' ' . (string)$consultor['LastName']));
+                        ?></option>
                         <?php endforeach; ?>
                     </select>
                     <div class="form-text">Consultor atual do precatório</div>
                 </div>
-                <div class="col-md-4">
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <label for="valor_min" class="form-label">Valor mínimo (R$)</label>
-                            <input type="number" step="0.01" min="0" class="form-control" id="valor_min" placeholder="Todos">
-                        </div>
-                        <div class="col-6">
-                            <label for="valor_max" class="form-label">Valor máximo (R$)</label>
-                            <input type="number" step="0.01" min="0" class="form-control" id="valor_max" placeholder="Todos">
-                        </div>
-                        <div class="col-12">
-                            <label for="previsao_max" class="form-label">Máxima previsão de pagamento</label>
-                            <input type="date" class="form-control" id="previsao_max">
-                            <div class="form-text">Em branco = todas as previsões</div>
-                        </div>
-                        <div class="col-12 form-check ms-2">
-                            <input type="checkbox" class="form-check-input" id="excluir_status_contrato">
-                            <label class="form-check-label" for="excluir_status_contrato">
-                                Excluir contratos assinados/parciais (status 66, 72, 74 e 75)
-                            </label>
-                        </div>
+                <div class="col-md-2">
+                    <label for="orcamento" class="form-label">Orçamento</label>
+                    <select class="form-select" id="orcamento" name="orcamento" multiple size="6">
+                        <?php foreach ($orcamentos as $orcamento): ?>
+                        <option value="<?php echo htmlspecialchars($orcamento['Orcamento']); ?>"><?php echo htmlspecialchars($orcamento['Orcamento']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">Nenhum = todos</div>
+                </div>
+                <div class="col-md-2">
+                    <label for="natureza_id" class="form-label">Natureza</label>
+                    <select class="form-select" id="natureza_id" name="natureza_id" multiple size="6">
+                        <?php foreach ($naturezas as $natureza): ?>
+                        <option value="<?php echo htmlspecialchars($natureza['natuPrec_id']); ?>"><?php echo htmlspecialchars($natureza['Natureza']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">Nenhuma = todas</div>
+                </div>
+                <div class="col-md-2">
+                    <label for="valor_min" class="form-label">Valor mínimo (R$)</label>
+                    <input type="number" step="0.01" min="0" class="form-control" id="valor_min" placeholder="Todos">
+
+                    <label for="valor_max" class="form-label">Valor máximo (R$)</label>
+                    <input type="number" step="0.01" min="0" class="form-control" id="valor_max" placeholder="Todos">
+
+                    <label for="previsao_max" class="form-label">Máxima previsão de pagamento</label>
+                    <input type="date" class="form-control" id="previsao_max">
+                    <div class="form-text">Em branco = todas</div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="excluir_status_contrato">
+                        <label class="form-check-label" for="excluir_status_contrato">
+                            Excluir contratos assinados/parciais (status 66, 72, 74 e 75)
+                        </label>
                     </div>
                 </div>
             </div>
@@ -179,6 +189,10 @@
                 </div>
                 <div class="col-md-6">
                     <div id="chart-status-destino" style="height: 350px;"></div>
+                    <div class="form-text">Clique em uma fatia para ver os entes daquele status.</div>
+                </div>
+                <div class="col-md-6">
+                    <div id="chart-status-ente" style="height: 350px;"></div>
                 </div>
             </div>
 
@@ -204,15 +218,19 @@
                         <option value="valor">Valor de face</option>
                     </select>
                 </div>
-                <div class="col-md-3 form-check ms-3">
-                    <input type="checkbox" class="form-check-input" id="somente_pendentes" checked>
-                    <label class="form-check-label" for="somente_pendentes">
-                        Somente pendentes de pagamento na data
-                    </label>
+                <div class="col-md-3">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="somente_pendentes" checked>
+                        <label class="form-check-label" for="somente_pendentes">
+                            Somente pendentes de pagamento na data
+                        </label>
+                    </div>
                 </div>
-                <div class="col-md-2 form-check ms-2">
-                    <input type="checkbox" class="form-check-input" id="agrupar_pai">
-                    <label class="form-check-label" for="agrupar_pai">Agrupar por status pai</label>
+                <div class="col-md-2">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="agrupar_pai">
+                        <label class="form-check-label" for="agrupar_pai">Agrupar por status pai</label>
+                    </div>
                 </div>
                 <div class="col-md-2">
                     <button type="submit" class="btn btn-primary w-100">Buscar</button>
@@ -256,10 +274,15 @@
                 aparece como <em>Sem Tentativa</em>.</li>
             <li>Mudanças feitas fora do fluxo de contato (ex.: <em>Pago pelo ente</em>, <em>Pausado</em>, alterações em
                 lote) não estão no histórico e não são reconstruídas.</li>
-            <li>&quot;Pendentes de pagamento na data&quot; combina <code>prec_pg</code> com a data da rodada de batch que
+            <li>&quot;Pendentes de pagamento na data&quot; parte do <code>prec_pg</code> e busca a data da quitação em
+                três fontes, nesta ordem: a coluna <code>Precatorio.DataQuitacao</code>; a data da rodada de batch que
                 quitou o precatório (<code>Precatorio.batch</code> = <code>BatchControl.n_batch_quit</code> do mesmo
-                ente). Quitações anteriores ao histórico de lotes não têm data e entram como já quitadas — a
-                quantidade nessa situação aparece no aviso acima do gráfico.</li>
+                ente); e, se nenhuma das duas tiver a data, o precatório entra como já quitado em qualquer data. O
+                aviso acima do gráfico mostra quantos estão em cada situação e o quanto o número reconstruído difere
+                dos pendentes de hoje.</li>
+            <li>A foto por data e a base &quot;Sem Tentativa&quot; consultam a tabela <code>Precatorio</code> direto, e
+                não a view <code>precatoriodetalhe</code>. Por isso contam também os precatórios que a view descarta
+                por falta de cadastro relacionado (credor, advogado, réu, tabela de cálculo).</li>
         </ul>
     </div>
 </div>

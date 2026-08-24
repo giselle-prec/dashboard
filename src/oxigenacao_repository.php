@@ -17,26 +17,49 @@
 // - Mudanças de status feitas fora do fluxo de contato (ex.: "Pago pelo ente",
 //   "Pausado", alterações em lote) não estão no histórico, então a reconstrução
 //   da foto por data é aproximada para esses status.
-// - prec_pg diz se o precatório está quitado hoje, mas não guarda a data. A data
-//   vem do histórico de lotes: cada rodada de batch reserva três números
-//   (n_batch_new, n_batch_upd, n_batch_quit) e grava o número usado em
-//   Precatorio.batch, então Precatorio.batch = BatchControl.n_batch_quit (do
-//   mesmo ente) identifica a rodada que quitou o precatório, e data_batch é a
-//   data. Isso só cobre o período coberto pelo BatchControl; quitações
-//   anteriores continuam sem data e são reportadas como tal na tela.
+// - Se o precatório está quitado hoje é o prec_pg quem diz. A data da quitação
+//   sai de três fontes, nesta ordem:
+//     1. Precatorio.DataQuitacao (coluna nova, preenchida nas alterações em
+//        lote) — a fonte exata, quando existir;
+//     2. o histórico de lotes: cada rodada de batch reserva três números
+//        (n_batch_new, n_batch_upd, n_batch_quit) e grava o usado em
+//        Precatorio.batch, então Precatorio.batch = BatchControl.n_batch_quit
+//        (do mesmo ente) identifica a rodada que quitou, e data_batch é a data;
+//     3. nada — quitação anterior a qualquer registro. Nesse caso o precatório
+//        entra como já quitado em qualquer data, e a tela avisa quantos estão
+//        nessa situação.
 //
-// Desempenho: as consultas varrem HistoricoContato agrupando por precatório e
-// data. Se o painel ficar lento, os índices que resolvem são
-// (PrecatorioId, DataContato) e (ResultContatoId) em HistoricoContato.
+// Desempenho: a foto por data e a base "Sem Tentativa" consultam a tabela
+// Precatorio direto, não a view precatoriodetalhe. A view junta nove tabelas e
+// varrê-la inteira por precatório é o que fazia a consulta travar. A diferença
+// é que a view descarta precatórios sem cadastro relacionado (credor, advogado,
+// réu, tabela de cálculo), então a foto conta um pouco mais de precatórios que
+// o Painel de Prospecção. A aba de período continua usando a view, mas só para
+// os precatórios oxigenados no intervalo, buscados pela chave primária.
+// Se ainda ficar lento, os índices que resolvem são (PrecatorioId, DataContato)
+// e (ResultContatoId) em HistoricoContato.
 
 require_once __DIR__ . '/prospeccao_repository.php';
 
 // Nomes de tabela isolados em constantes sobrescrevíveis (o harness de teste
 // aponta as constantes para tabelas locais antes de incluir este arquivo).
-defined('OXI_TB_HISTORICO') || define('OXI_TB_HISTORICO', 'precappapp.HistoricoContato');
-defined('OXI_TB_STATUS')    || define('OXI_TB_STATUS',    'precappapp.StatusPrecatorio');
-defined('OXI_TB_DETALHE')   || define('OXI_TB_DETALHE',   'precappapp.precatoriodetalhe');
-defined('OXI_TB_BATCH')     || define('OXI_TB_BATCH',     'precappapp.BatchControl');
+defined('OXI_TB_HISTORICO')  || define('OXI_TB_HISTORICO',  'precappapp.HistoricoContato');
+defined('OXI_TB_STATUS')     || define('OXI_TB_STATUS',     'precappapp.StatusPrecatorio');
+defined('OXI_TB_DETALHE')    || define('OXI_TB_DETALHE',    'precappapp.precatoriodetalhe');
+defined('OXI_TB_BATCH')      || define('OXI_TB_BATCH',      'precappapp.BatchControl');
+defined('OXI_TB_PRECATORIO') || define('OXI_TB_PRECATORIO', 'precappapp.Precatorio');
+defined('OXI_TB_NATUREZA')   || define('OXI_TB_NATUREZA',   'precappapp.NaturezaPrec');
+defined('OXI_TB_USUARIO')    || define('OXI_TB_USUARIO',    'precappapp.Usuario');
+
+// Coluna com a data em que o tribunal quitou o precatório. Ainda não existe em
+// todas as bases: quando estiver ausente, a reconstrução cai para o histórico
+// de lotes sozinho. Trocar aqui se a coluna receber outro nome.
+defined('OXI_COL_DATA_QUITACAO') || define('OXI_COL_DATA_QUITACAO', 'DataQuitacao');
+
+// Teto de execução das consultas pesadas (hint do MySQL 8; outros bancos leem
+// como comentário). Sem isso, uma consulta lenta prende o servidor de
+// desenvolvimento do PHP, que atende uma requisição por vez.
+const OXI_HINT_TIMEOUT = '/*+ MAX_EXECUTION_TIME(30000) */';
 
 // Máximo de linhas de detalhe devolvidas ao navegador (os agregados continuam
 // considerando o conjunto completo).
@@ -106,6 +129,7 @@ function oxigenacao_parse_filtros(array $input, $modo = 'periodo') {
         'ente_id'      => oxigenacao_sanitize_lista_int($input['ente_id'] ?? null, 'Ente'),
         'orcamento'    => oxigenacao_sanitize_lista_int($input['orcamento'] ?? null, 'Orçamento'),
         'consultor_id' => oxigenacao_sanitize_lista_int($input['consultor_id'] ?? null, 'Consultor'),
+        'natureza_id'  => oxigenacao_sanitize_lista_int($input['natureza_id'] ?? null, 'Natureza'),
         'valor_min'    => oxigenacao_sanitize_valor_opcional($input['valor_min'] ?? null, 'Valor mínimo'),
         'valor_max'    => oxigenacao_sanitize_valor_opcional($input['valor_max'] ?? null, 'Valor máximo'),
         'previsao_max' => oxigenacao_sanitize_data_opcional($input['previsao_max'] ?? null, 'Máxima previsão de pagamento'),
@@ -171,9 +195,15 @@ function oxigenacao_status_sem_tentativa(PDO $pdo) {
 function oxigenacao_where_precatorio(array $filtros, array &$params, $alias = 'p') {
     $sql = '';
 
+    // EnteId (e não ente_id) porque a mesma cláusula roda contra a view e
+    // contra a tabela Precatorio.
     if ($filtros['ente_id']) {
-        $sql .= " AND {$alias}.ente_id IN (" . oxigenacao_placeholders($filtros['ente_id']) . ')';
+        $sql .= " AND {$alias}.EnteId IN (" . oxigenacao_placeholders($filtros['ente_id']) . ')';
         $params = array_merge($params, $filtros['ente_id']);
+    }
+    if ($filtros['natureza_id']) {
+        $sql .= " AND {$alias}.NaturezaId IN (" . oxigenacao_placeholders($filtros['natureza_id']) . ')';
+        $params = array_merge($params, $filtros['natureza_id']);
     }
     if ($filtros['orcamento']) {
         $sql .= " AND {$alias}.Orcamento IN (" . oxigenacao_placeholders($filtros['orcamento']) . ')';
@@ -192,7 +222,7 @@ function oxigenacao_where_precatorio(array $filtros, array &$params, $alias = 'p
         $params[] = $filtros['valor_max'];
     }
     if ($filtros['previsao_max'] !== null) {
-        $sql .= " AND {$alias}.Datarecebimento < ?";
+        $sql .= " AND {$alias}.DataRecebimento < ?";
         $params[] = oxigenacao_dia_seguinte($filtros['previsao_max']);
     }
     if (!empty($filtros['excluir_status_contrato'])) {
@@ -313,6 +343,7 @@ function oxigenacao_ordenar_agregado(array $agregado, $por = 'valor') {
 // Agregados dos gráficos, calculados em PHP a partir dos eventos.
 function oxigenacao_agregar(array $eventos) {
     $porDia = $porEnte = $porConsultor = $porStatus = [];
+    $porStatusEnte = [];
     $valorTotal = 0.0;
     $entes = [];
 
@@ -320,14 +351,26 @@ function oxigenacao_agregar(array $eventos) {
         $valor = (float)$evento['ValorPrec'];
         $valorTotal += $valor;
         $entes[$evento['ente_id']] = true;
+        $status = $evento['StatusDestino'];
 
         oxigenacao_acumular($porDia, $evento['DataOxigenacao'], $evento['DataOxigenacao'], $valor);
         oxigenacao_acumular($porEnte, $evento['ente_id'], $evento['Ente'], $valor);
         oxigenacao_acumular($porConsultor, $evento['ConsultorId'], $evento['Consultor'], $valor);
-        oxigenacao_acumular($porStatus, $evento['StatusDestino'], $evento['StatusDestino'], $valor);
+        oxigenacao_acumular($porStatus, $status, $status, $valor);
+
+        // Cruzamento status de destino x ente, para o detalhamento ao clicar
+        // numa fatia do gráfico de status.
+        if (!isset($porStatusEnte[$status])) {
+            $porStatusEnte[$status] = [];
+        }
+        oxigenacao_acumular($porStatusEnte[$status], $evento['ente_id'], $evento['Ente'], $valor);
     }
 
     ksort($porDia);
+
+    foreach ($porStatusEnte as $status => $entesDoStatus) {
+        $porStatusEnte[$status] = oxigenacao_ordenar_agregado($entesDoStatus, 'qtd');
+    }
 
     $qtd = count($eventos);
 
@@ -342,6 +385,7 @@ function oxigenacao_agregar(array $eventos) {
         'por_ente'           => oxigenacao_ordenar_agregado($porEnte),
         'por_consultor'      => oxigenacao_ordenar_agregado($porConsultor),
         'por_status_destino' => oxigenacao_ordenar_agregado($porStatus),
+        'por_status_ente'    => $porStatusEnte,
     ];
 }
 
@@ -350,13 +394,13 @@ function oxigenacao_agregar(array $eventos) {
 function oxigenacao_base_sem_tentativa(PDO $pdo, array $filtros) {
     $semTentativa = oxigenacao_status_sem_tentativa($pdo);
     $ph = oxigenacao_placeholders($semTentativa);
-    $detalhe = OXI_TB_DETALHE;
+    $precatorio = OXI_TB_PRECATORIO;
 
-    $sql = "
-        SELECT
+    $sql = '
+        SELECT ' . OXI_HINT_TIMEOUT . "
             COUNT(*) AS Qtd,
             COALESCE(SUM(CAST(p.ValorPrec AS DECIMAL(15,2))), 0) AS Valor
-        FROM {$detalhe} p
+        FROM {$precatorio} p
         WHERE p.StatusId IN ({$ph})
     ";
     $params = $semTentativa;
@@ -406,22 +450,56 @@ function oxigenacao_join_quitacao($alias = 'p', $aliasQuit = 'q') {
             AND {$aliasQuit}.EnteId = CAST({$alias}.EnteId AS SIGNED) ";
 }
 
+// A coluna de data de quitação está sendo criada aos poucos: o painel funciona
+// com ou sem ela, então a presença é checada em vez de assumida.
+function oxigenacao_coluna_quitacao_existe(PDO $pdo) {
+    $col = OXI_COL_DATA_QUITACAO;
+    $tabela = OXI_TB_PRECATORIO;
+    try {
+        $pdo->query("SELECT {$col} FROM {$tabela} WHERE 1 = 0")->fetchAll();
+        return true;
+    } catch (PDOException $e) {
+        return false;
+    }
+}
+
 // Ponto único de decisão do que é "pendente de pagamento" na data escolhida:
-// nunca quitado, ou quitado depois da data. Precatório quitado cuja rodada de
-// batch não está no histórico fica de fora — a contagem desses casos vai para
+// nunca quitado, ou quitado depois dela. As fontes de data são consultadas na
+// ordem descrita no topo do arquivo. Precatório quitado sem data em nenhuma
+// fonte fica de fora — a contagem desses casos vai para
 // oxigenacao_cobertura_quitacao(), para a tela mostrar o tamanho da incerteza.
-function oxigenacao_filtro_pendente_pagamento(array $filtros, array &$params, $alias = 'p', $aliasQuit = 'q') {
+//
+// A comparação usa o dia seguinte para dar o mesmo resultado quer a data esteja
+// gravada como data pura, quer com hora junto.
+function oxigenacao_filtro_pendente_pagamento(PDO $pdo, array $filtros, array &$params, $alias = 'p', $aliasQuit = 'q') {
     if (empty($filtros['somente_pendentes'])) {
         return '';
     }
-    $params[] = $filtros['data_ref'];
-    return " AND ({$alias}.prec_pg IS NULL OR {$aliasQuit}.DataQuitacao > ?)";
+
+    $limite = oxigenacao_dia_seguinte($filtros['data_ref']);
+    $col = OXI_COL_DATA_QUITACAO;
+
+    if (!oxigenacao_coluna_quitacao_existe($pdo)) {
+        $params[] = $limite;
+        return " AND ({$alias}.prec_pg IS NULL OR {$aliasQuit}.DataQuitacao >= ?)";
+    }
+
+    $params[] = $limite;
+    $params[] = $limite;
+    return " AND ({$alias}.prec_pg IS NULL
+                  OR ({$alias}.{$col} IS NOT NULL AND {$alias}.{$col} <> '' AND {$alias}.{$col} >= ?)
+                  OR (({$alias}.{$col} IS NULL OR {$alias}.{$col} = '') AND {$aliasQuit}.DataQuitacao >= ?))";
 }
 
-// Quanto da reconstrução de quitação é confiável para os filtros escolhidos.
+// Quanto da reconstrução de quitação é confiável para os filtros escolhidos:
+// quantos quitados têm data exata, quantos têm só a data do lote, quantos não
+// têm nenhuma — e quantos estão pendentes hoje, que é a referência com que a
+// tela compara o número reconstruído.
 function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
-    $detalhe = OXI_TB_DETALHE;
-    $batch   = OXI_TB_BATCH;
+    $precatorio = OXI_TB_PRECATORIO;
+    $batch      = OXI_TB_BATCH;
+    $col        = OXI_COL_DATA_QUITACAO;
+    $temColuna  = oxigenacao_coluna_quitacao_existe($pdo);
 
     $inicio = $pdo->query("
         SELECT MIN(b.data_batch) AS Inicio
@@ -432,13 +510,20 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
           AND b.data_batch <> ''
     ")->fetch();
 
-    $sql = "
-        SELECT
-            SUM(CASE WHEN q.DataQuitacao IS NULL THEN 1 ELSE 0 END)     AS SemData,
-            SUM(CASE WHEN q.DataQuitacao IS NOT NULL THEN 1 ELSE 0 END) AS ComData
-        FROM {$detalhe} p
+    // Sem a coluna, nenhum precatório entra no balde "data exata".
+    $temDataExata = $temColuna ? "(p.{$col} IS NOT NULL AND p.{$col} <> '')" : '(1 = 0)';
+
+    $sql = '
+        SELECT ' . OXI_HINT_TIMEOUT . "
+            SUM(CASE WHEN p.prec_pg IS NULL THEN 1 ELSE 0 END) AS PendentesHoje,
+            SUM(CASE WHEN p.prec_pg IS NOT NULL AND {$temDataExata} THEN 1 ELSE 0 END) AS ComDataExata,
+            SUM(CASE WHEN p.prec_pg IS NOT NULL AND NOT {$temDataExata}
+                          AND q.DataQuitacao IS NOT NULL THEN 1 ELSE 0 END) AS ComDataLote,
+            SUM(CASE WHEN p.prec_pg IS NOT NULL AND NOT {$temDataExata}
+                          AND q.DataQuitacao IS NULL THEN 1 ELSE 0 END) AS SemData
+        FROM {$precatorio} p
     " . oxigenacao_join_quitacao() . '
-        WHERE p.prec_pg IS NOT NULL
+        WHERE 1 = 1
     ';
     $params = [];
     $sql .= oxigenacao_where_precatorio($filtros, $params);
@@ -448,9 +533,13 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
     $linha = $stmt->fetch();
 
     return [
-        'inicio_historico'   => $inicio['Inicio'] ?? null,
-        'quitados_com_data'  => (int)($linha['ComData'] ?? 0),
-        'quitados_sem_data'  => (int)($linha['SemData'] ?? 0),
+        'inicio_historico'  => $inicio['Inicio'] ?? null,
+        'tem_coluna_data'   => $temColuna,
+        'coluna_data'       => $col,
+        'pendentes_hoje'    => (int)($linha['PendentesHoje'] ?? 0),
+        'quitados_data_exata' => (int)($linha['ComDataExata'] ?? 0),
+        'quitados_data_lote'  => (int)($linha['ComDataLote'] ?? 0),
+        'quitados_sem_data'   => (int)($linha['SemData'] ?? 0),
     ];
 }
 
@@ -458,21 +547,21 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
 // O status na data é o resultado do último contato até aquele dia; sem contato,
 // o precatório é considerado "Sem Tentativa".
 function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
-    $historico = OXI_TB_HISTORICO;
-    $detalhe   = OXI_TB_DETALHE;
-    $status    = OXI_TB_STATUS;
-    $limite    = oxigenacao_dia_seguinte($filtros['data_ref']);
+    $historico  = OXI_TB_HISTORICO;
+    $precatorio = OXI_TB_PRECATORIO;
+    $status     = OXI_TB_STATUS;
+    $limite     = oxigenacao_dia_seguinte($filtros['data_ref']);
 
     // Aqui não há filtro de família: um contato pode devolver o precatório
     // para "Sem Tentativa", e essa volta precisa aparecer na foto.
-    $sql = "
-        SELECT
+    $sql = '
+        SELECT ' . OXI_HINT_TIMEOUT . "
             ult.ResultContatoId AS StatusId,
             s.Status            AS StatusNome,
             s.ParentId          AS ParentId,
             COUNT(*)            AS Qtd,
             COALESCE(SUM(CAST(p.ValorPrec AS DECIMAL(15,2))), 0) AS Valor
-        FROM {$detalhe} p
+        FROM {$precatorio} p
         LEFT JOIN (
             SELECT h2.PrecatorioId AS PrecatorioId, h2.ResultContatoId AS ResultContatoId
             FROM {$historico} h2
@@ -497,7 +586,7 @@ function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
 
     $params = [$limite, $limite];
     $sql .= oxigenacao_where_precatorio($filtros, $params);
-    $sql .= oxigenacao_filtro_pendente_pagamento($filtros, $params);
+    $sql .= oxigenacao_filtro_pendente_pagamento($pdo, $filtros, $params);
     $sql .= ' GROUP BY ult.ResultContatoId, s.Status, s.ParentId';
 
     $stmt = $pdo->prepare($sql);
@@ -563,17 +652,20 @@ function oxigenacao_mapa_status(PDO $pdo) {
 }
 
 function oxigenacao_opcoes_orcamento(PDO $pdo) {
-    $sql = 'SELECT DISTINCT Orcamento FROM ' . OXI_TB_DETALHE . '
+    $sql = 'SELECT DISTINCT Orcamento FROM ' . OXI_TB_PRECATORIO . '
             WHERE Orcamento IS NOT NULL ORDER BY Orcamento DESC';
     return $pdo->query($sql)->fetchAll();
 }
 
-// Consultores derivados da própria view (mesma origem do filtro: o consultor
-// atual do precatório). Se o DISTINCT ficar pesado em produção, trocar por uma
-// consulta à tabela de usuários — é o único ponto que precisa mudar.
+function oxigenacao_opcoes_natureza(PDO $pdo) {
+    $sql = 'SELECT natuPrec_id, Natureza FROM ' . OXI_TB_NATUREZA . ' ORDER BY Natureza';
+    return $pdo->query($sql)->fetchAll();
+}
+
+// Consultores vêm da tabela de usuários, não de um DISTINCT sobre a view: a
+// lista é montada a cada abertura da página e a view é cara de varrer.
 function oxigenacao_opcoes_consultor(PDO $pdo) {
-    $sql = 'SELECT DISTINCT Negociador, FirstName, LastName FROM ' . OXI_TB_DETALHE . '
-            WHERE Negociador IS NOT NULL AND FirstName IS NOT NULL
-            ORDER BY FirstName';
+    $sql = 'SELECT usuario_id AS Negociador, FirstName, LastName FROM ' . OXI_TB_USUARIO . '
+            WHERE FirstName IS NOT NULL ORDER BY FirstName';
     return $pdo->query($sql)->fetchAll();
 }

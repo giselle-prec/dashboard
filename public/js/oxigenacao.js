@@ -14,6 +14,9 @@
     var tabelaEventos = null;
     var tabelaFoto = null;
 
+    // Status escolhido na pizza de destino, que alimenta a quebra por ente.
+    var statusSelecionado = null;
+
     function formatarMoeda(valor) {
         return moedaFormatter.format(Number(valor) || 0);
     }
@@ -54,6 +57,7 @@
             ente_id: $('#ente_id').val() || [],
             orcamento: $('#orcamento').val() || [],
             consultor_id: $('#consultor_id').val() || [],
+            natureza_id: $('#natureza_id').val() || [],
             valor_min: $('#valor_min').val(),
             valor_max: $('#valor_max').val(),
             previsao_max: $('#previsao_max').val()
@@ -204,7 +208,44 @@
         chart.tooltip().format(function () {
             return formatarMetrica(this.value, metrica);
         });
+        chart.listen('pointClick', function (e) {
+            var status = null;
+            if (e.point && typeof e.point.get === 'function') {
+                status = e.point.get('x');
+            } else if (e.iterator && typeof e.iterator.get === 'function') {
+                status = e.iterator.get('x');
+            }
+            if (!status) {
+                return;
+            }
+            // Clicar de novo no mesmo status desfaz a seleção.
+            statusSelecionado = (statusSelecionado === status) ? null : status;
+            graficoStatusEnte(metricaPeriodo());
+        });
         desenhar('chart-status-destino', chart);
+    }
+
+    // Detalhamento do status escolhido na pizza: quantos precatórios de cada
+    // ente foram para aquele status.
+    function graficoStatusEnte(metrica) {
+        var container = $('#chart-status-ente');
+
+        if (!statusSelecionado || !ultimoPeriodo) {
+            if (charts['chart-status-ente']) {
+                charts['chart-status-ente'].dispose();
+                delete charts['chart-status-ente'];
+            }
+            container.empty().append(
+                '<div class="text-muted d-flex align-items-center justify-content-center h-100">' +
+                'Clique em um status ao lado para ver a quebra por ente.</div>'
+            );
+            return;
+        }
+
+        container.empty();
+        var dados = (ultimoPeriodo.por_status_ente || {})[statusSelecionado] || [];
+        graficoBarras('chart-status-ente', dados, 'Entes que foram para "' + statusSelecionado + '"',
+            metrica, TOP_ENTES);
     }
 
     function colunasEventos() {
@@ -272,6 +313,12 @@
         graficoBarras('chart-ente', ultimoPeriodo.por_ente, 'Top ' + TOP_ENTES + ' entes', metrica, TOP_ENTES);
         graficoBarras('chart-consultor', ultimoPeriodo.por_consultor, 'Por consultor', metrica);
         graficoStatusDestino(ultimoPeriodo.por_status_destino, metrica);
+
+        // Um status selecionado numa busca anterior pode não existir na nova.
+        if (statusSelecionado && !(ultimoPeriodo.por_status_ente || {})[statusSelecionado]) {
+            statusSelecionado = null;
+        }
+        graficoStatusEnte(metrica);
     }
 
     function carregarPeriodo() {
@@ -346,8 +393,8 @@
         });
     }
 
-    // A data de quitação vem do histórico de lotes, que só cobre o período do
-    // BatchControl. O aviso diz quanto da foto depende de suposição.
+    // A data da quitação vem de três fontes (coluna de data, histórico de lotes
+    // ou nenhuma). O aviso diz quanto da foto é exato e quanto é aproximação.
     function atualizarCobertura() {
         var aviso = $('#aviso-cobertura');
         var cobertura = ultimaFoto && ultimaFoto.cobertura;
@@ -357,22 +404,47 @@
             return;
         }
 
+        var exatos = Number(cobertura.quitados_data_exata) || 0;
+        var porLote = Number(cobertura.quitados_data_lote) || 0;
+        var semData = Number(cobertura.quitados_sem_data) || 0;
+        var pendentesHoje = Number(cobertura.pendentes_hoje) || 0;
+        var naData = Number(ultimaFoto.totais.qtd) || 0;
+
         var partes = [];
-        if (cobertura.inicio_historico && ultimaFoto.data_ref < cobertura.inicio_historico) {
-            partes.push('O histórico de lotes começa em ' + formatarData(cobertura.inicio_historico) +
-                '. Para datas anteriores não dá para saber quem já estava quitado.');
-        }
-        if (cobertura.quitados_sem_data > 0) {
-            partes.push(formatarInteiro(cobertura.quitados_sem_data) +
-                ' precatórios já quitados não têm rodada de batch registrada e entram como quitados em qualquer data; ' +
-                formatarInteiro(cobertura.quitados_com_data) + ' têm data de quitação conhecida.');
+        var aproximado = semData > 0;
+
+        if (!aproximado) {
+            partes.push('Número exato: todos os precatórios quitados destes filtros têm data de quitação registrada (' +
+                formatarInteiro(exatos) + ' pela coluna ' + cobertura.coluna_data + ', ' +
+                formatarInteiro(porLote) + ' pelo histórico de lotes).');
+        } else {
+            partes.push('Valor aproximado: ' + formatarInteiro(semData) + ' precatórios já quitados não têm data de ' +
+                'quitação em nenhuma fonte e entram como quitados em qualquer data, então o número real de pendentes ' +
+                'nesta data é maior que o mostrado.');
+            partes.push('Com data: ' + formatarInteiro(exatos) + ' pela coluna ' + cobertura.coluna_data + ' e ' +
+                formatarInteiro(porLote) + ' pelo histórico de lotes.');
         }
 
-        if (!partes.length) {
-            aviso.addClass('d-none').empty();
-            return;
+        if (pendentesHoje > 0) {
+            var variacao = ((naData - pendentesHoje) / pendentesHoje) * 100;
+            var sentido = variacao >= 0 ? 'a mais que' : 'a menos que';
+            partes.push('Nesta data: ' + formatarInteiro(naData) + ' pendentes, ' +
+                Math.abs(variacao).toFixed(1).replace('.', ',') + '% ' + sentido + ' os ' +
+                formatarInteiro(pendentesHoje) + ' pendentes de hoje com os mesmos filtros.');
         }
-        aviso.removeClass('d-none').text(partes.join(' '));
+
+        if (!cobertura.tem_coluna_data) {
+            partes.push('A coluna ' + cobertura.coluna_data + ' ainda não existe na tabela Precatorio; ' +
+                'assim que ela for preenchida nas alterações em lote, passa a ser usada automaticamente.');
+        }
+        if (cobertura.inicio_historico && ultimaFoto.data_ref < cobertura.inicio_historico) {
+            partes.push('O histórico de lotes começa em ' + formatarData(cobertura.inicio_historico) + '.');
+        }
+
+        aviso.removeClass('d-none')
+            .removeClass('alert-info alert-warning')
+            .addClass(aproximado ? 'alert-warning' : 'alert-info')
+            .text(partes.join(' '));
     }
 
     function renderizarFoto() {
@@ -443,7 +515,34 @@
             });
     }
 
+    // Filtro de digitação sobre listas longas (Ente e Consultor). Opções já
+    // selecionadas nunca somem, para não perder a seleção ao buscar de novo.
+    function ligarBuscaDeOpcoes() {
+        $('input[data-filtra]').each(function () {
+            var campo = $(this);
+            var select = $(campo.data('filtra'));
+            var opcoes = select.find('option').map(function () {
+                return { elemento: $(this), texto: $(this).text().toLowerCase() };
+            }).get();
+
+            campo.on('input', function () {
+                var termo = campo.val().toLowerCase().trim();
+                opcoes.forEach(function (opcao) {
+                    var visivel = termo === '' ||
+                        opcao.texto.indexOf(termo) !== -1 ||
+                        opcao.elemento.prop('selected');
+                    // hidden, e não display:none, porque é o que os navegadores
+                    // respeitam dentro de um <select multiple>.
+                    opcao.elemento.prop('hidden', !visivel);
+                });
+            });
+        });
+    }
+
     $(function () {
+        ligarBuscaDeOpcoes();
+        graficoStatusEnte(metricaPeriodo());
+
         $('#form-periodo').on('submit', function (e) {
             e.preventDefault();
             carregarPeriodo();

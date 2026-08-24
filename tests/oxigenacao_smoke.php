@@ -26,6 +26,9 @@ define('OXI_TB_HISTORICO', 'HistoricoContato');
 define('OXI_TB_STATUS', 'StatusPrecatorio');
 define('OXI_TB_DETALHE', 'precatoriodetalhe');
 define('OXI_TB_BATCH', 'BatchControl');
+define('OXI_TB_PRECATORIO', 'Precatorio');
+define('OXI_TB_USUARIO', 'Usuario');
+define('OXI_TB_NATUREZA', 'NaturezaPrec');
 
 require __DIR__ . '/../src/oxigenacao_repository.php';
 
@@ -106,6 +109,18 @@ $qtdStatus    = carregar_csv($pdo, OXI_TB_STATUS, achar_csv($dir, 'status_precat
 $qtdDetalhe   = carregar_csv($pdo, OXI_TB_DETALHE, achar_csv($dir, 'view_precatorio_detalhe'));
 $qtdBatch     = carregar_csv($pdo, OXI_TB_BATCH, achar_csv($dir, 'historico_batch'));
 
+// A exportação enviada é da view; as consultas pesadas rodam contra a tabela
+// Precatorio, então ela é derivada aqui, junto das tabelas auxiliares que a
+// página usa para montar os filtros.
+$pdo->exec('CREATE TABLE ' . OXI_TB_PRECATORIO . ' AS SELECT *, NULL AS ' . OXI_COL_DATA_QUITACAO
+    . ' FROM ' . OXI_TB_DETALHE);
+$pdo->exec('CREATE TABLE ' . OXI_TB_USUARIO . ' AS
+            SELECT DISTINCT usuario_id, FirstName, LastName FROM ' . OXI_TB_DETALHE . '
+            WHERE usuario_id IS NOT NULL');
+$pdo->exec('CREATE TABLE ' . OXI_TB_NATUREZA . ' AS
+            SELECT DISTINCT NaturezaId AS natuPrec_id, Natureza FROM ' . OXI_TB_DETALHE . '
+            WHERE NaturezaId IS NOT NULL');
+
 echo "Carga: {$qtdHistorico} contatos, {$qtdStatus} status, {$qtdDetalhe} precatórios, {$qtdBatch} rodadas de batch.\n\n";
 
 $semTentativa = oxigenacao_status_sem_tentativa($pdo);
@@ -117,6 +132,8 @@ $filtrosBase = [
     'data_inicio' => '2000-01-01',
     'data_fim'    => '2100-12-31',
 ];
+
+$hoje = date('Y-m-d');
 
 function filtros(array $extra = []) {
     return oxigenacao_parse_filtros(array_merge([
@@ -222,6 +239,22 @@ $foraDoOrcamento = array_filter($porOrcamento, function ($e) use ($orcamentoAlvo
 verificar('filtro de Orçamento devolve só o orçamento pedido',
     count($porOrcamento) > 0 && count($foraDoOrcamento) === 0);
 
+$naturezaAlvo = (int)$pdo->query('SELECT NaturezaId FROM ' . OXI_TB_PRECATORIO . '
+                                  WHERE NaturezaId IS NOT NULL LIMIT 1')->fetch()['NaturezaId'];
+$porNatureza = oxigenacao_eventos($pdo, filtros(['natureza_id' => [$naturezaAlvo]]));
+$idsNatureza = array_column($porNatureza, 'precatorio_id');
+$stmt = $pdo->query('SELECT precatorio_id FROM ' . OXI_TB_PRECATORIO . '
+                     WHERE NaturezaId <> ' . $naturezaAlvo);
+$deOutraNatureza = array_intersect($idsNatureza, array_column($stmt->fetchAll(), 'precatorio_id'));
+verificar('filtro de Natureza devolve só a natureza pedida',
+    count($porNatureza) > 0 && count($deOutraNatureza) === 0);
+verificar('filtro de Natureza reduz o conjunto', count($porNatureza) < count($eventos));
+
+$fotoNatureza = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $hoje, 'natureza_id' => [$naturezaAlvo]]));
+$fotoTodas = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $hoje]));
+verificar('filtro de Natureza também vale na foto',
+    $fotoNatureza['totais']['qtd'] > 0 && $fotoNatureza['totais']['qtd'] < $fotoTodas['totais']['qtd']);
+
 $porValor = oxigenacao_eventos($pdo, filtros(['valor_min' => '100000', 'valor_max' => '500000']));
 $foraDaFaixa = array_filter($porValor, function ($e) {
     return $e['ValorPrec'] < 100000 || $e['ValorPrec'] > 500000;
@@ -270,6 +303,27 @@ verificar('todos os cortes somam o mesmo total',
 $valorTotal = array_sum(array_column($eventos, 'ValorPrec'));
 verificar('KPI de valor bate com a soma dos eventos',
     abs($agregados['kpis']['valor'] - $valorTotal) < 0.01);
+
+// Cruzamento status x ente que alimenta o detalhamento ao clicar na pizza.
+$statusComEnte = array_keys($agregados['por_status_ente']);
+$statusNaPizza = array_column($agregados['por_status_destino'], 'rotulo');
+sort($statusComEnte);
+sort($statusNaPizza);
+verificar('todo status da pizza tem quebra por ente', $statusComEnte === $statusNaPizza);
+
+$somaCruzada = 0;
+$divergenteCruzado = [];
+foreach ($agregados['por_status_destino'] as $linha) {
+    $entesDoStatus = $agregados['por_status_ente'][$linha['rotulo']];
+    $soma = array_sum(array_column($entesDoStatus, 'qtd'));
+    $somaCruzada += $soma;
+    if ($soma !== $linha['qtd']) {
+        $divergenteCruzado[] = $linha['rotulo'] . ": {$soma} != {$linha['qtd']}";
+    }
+}
+verificar('a quebra por ente soma o total do status',
+    count($divergenteCruzado) === 0, implode(' | ', $divergenteCruzado));
+verificar('o cruzamento cobre todos os eventos', $somaCruzada === count($eventos));
 
 $datasOrdenadas = array_column($agregados['por_dia'], 'rotulo');
 $copia = $datasOrdenadas;
@@ -340,7 +394,6 @@ verificar('filtros comuns também valem na foto',
     $fotoEnte['totais']['qtd'] > 0 && $fotoEnte['totais']['qtd'] < $foto['totais']['qtd']);
 
 // A foto de hoje tem que reproduzir os status atuais de quem nunca teve contato.
-$hoje = date('Y-m-d');
 $fotoHoje = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $hoje]));
 $stmt = $pdo->query('SELECT COUNT(*) AS Qtd FROM ' . OXI_TB_DETALHE);
 verificar('foto de hoje cobre todos os precatórios da view',
@@ -354,15 +407,24 @@ echo "\nQuitação pelo histórico de lotes:\n";
 
 $cobertura = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => $hoje]));
 echo "  histórico de lotes começa em {$cobertura['inicio_historico']}; "
-    . "{$cobertura['quitados_com_data']} quitados com data, {$cobertura['quitados_sem_data']} sem.\n";
+    . "{$cobertura['quitados_data_exata']} com data exata, {$cobertura['quitados_data_lote']} por lote, "
+    . "{$cobertura['quitados_sem_data']} sem data; {$cobertura['pendentes_hoje']} pendentes hoje.\n";
 
 verificar('início do histórico de lotes é identificado',
     $cobertura['inicio_historico'] !== null);
-verificar('quitados com + sem data somam os quitados da amostra',
-    $cobertura['quitados_com_data'] + $cobertura['quitados_sem_data'] === count(array_filter(
-        $pdo->query('SELECT prec_pg FROM ' . OXI_TB_DETALHE)->fetchAll(),
-        function ($l) { return $l['prec_pg'] !== null; }
-    )));
+verificar('a coluna de data de quitação é detectada quando existe',
+    $cobertura['tem_coluna_data'] === true);
+
+$quitadosNaAmostra = count(array_filter(
+    $pdo->query('SELECT prec_pg FROM ' . OXI_TB_PRECATORIO)->fetchAll(),
+    function ($l) { return $l['prec_pg'] !== null; }
+));
+verificar('as três fontes somam os quitados da amostra',
+    $cobertura['quitados_data_exata'] + $cobertura['quitados_data_lote'] + $cobertura['quitados_sem_data']
+        === $quitadosNaAmostra);
+verificar('pendentes de hoje é o complemento dos quitados',
+    $cobertura['pendentes_hoje'] + $quitadosNaAmostra === (int)$pdo->query(
+        'SELECT COUNT(*) AS Qtd FROM ' . OXI_TB_PRECATORIO)->fetch()['Qtd']);
 
 // As amostras de precatório e de batch não se cruzam (a view exportada tem
 // lotes antigos), então a rodada de quitação é montada aqui para exercitar o
@@ -389,9 +451,9 @@ verificar('precatório quitado ainda conta como pendente antes da data do lote',
     "{$antes['totais']['qtd']} - {$depois['totais']['qtd']} != {$alvo['Qtd']}");
 
 $coberturaDepois = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => '2024-08-01']));
-verificar('a rodada registrada passa a contar como quitação com data',
-    $coberturaDepois['quitados_com_data'] === (int)$alvo['Qtd'],
-    "{$coberturaDepois['quitados_com_data']} != {$alvo['Qtd']}");
+verificar('a rodada registrada passa a contar como quitação por lote',
+    $coberturaDepois['quitados_data_lote'] === (int)$alvo['Qtd'],
+    "{$coberturaDepois['quitados_data_lote']} != {$alvo['Qtd']}");
 
 // A quitação de um ente não pode vazar para precatórios de outro ente com o
 // mesmo número de lote.
@@ -411,6 +473,64 @@ verificar('lote 0 não é tratado como rodada de quitação',
     $depoisComZero['totais']['qtd'] === $depois['totais']['qtd'],
     "{$depoisComZero['totais']['qtd']} != {$depois['totais']['qtd']}");
 
+// A coluna de data de quitação tem precedência sobre a data do lote.
+echo "\nColuna de data de quitação:\n";
+
+$pdo->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET ' . OXI_COL_DATA_QUITACAO . " = '2024-12-20'
+            WHERE prec_pg IS NOT NULL AND EnteId = " . (int)$alvo['EnteId'] . '
+              AND CAST(batch AS SIGNED) = ' . (int)$alvo['batch']);
+
+$comColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
+verificar('data da coluna vence a data do lote (lote dizia quitado, coluna diz que não)',
+    $comColuna['totais']['qtd'] === $depois['totais']['qtd'] + (int)$alvo['Qtd'],
+    "{$comColuna['totais']['qtd']} != " . ($depois['totais']['qtd'] + (int)$alvo['Qtd']));
+
+$depoisDaColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2025-01-05', 'somente_pendentes' => 1]));
+verificar('passada a data da coluna, o precatório sai dos pendentes',
+    $depoisDaColuna['totais']['qtd'] === $comColuna['totais']['qtd'] - (int)$alvo['Qtd'],
+    "{$depoisDaColuna['totais']['qtd']} vs {$comColuna['totais']['qtd']}");
+
+$coberturaColuna = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => '2024-08-01']));
+verificar('cobertura separa data exata de data por lote',
+    $coberturaColuna['quitados_data_exata'] === (int)$alvo['Qtd']
+    && $coberturaColuna['quitados_data_lote'] === 0,
+    "exata={$coberturaColuna['quitados_data_exata']} lote={$coberturaColuna['quitados_data_lote']}");
+
+// Data gravada com hora junto tem que dar o mesmo resultado da data pura.
+$pdo->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET ' . OXI_COL_DATA_QUITACAO . " = '2024-12-20T03:00:00.000Z'
+            WHERE " . OXI_COL_DATA_QUITACAO . " = '2024-12-20'");
+$comHora = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-12-20', 'somente_pendentes' => 1]));
+$pdo->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET ' . OXI_COL_DATA_QUITACAO . " = '2024-12-20'
+            WHERE " . OXI_COL_DATA_QUITACAO . " = '2024-12-20T03:00:00.000Z'");
+$semHora = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-12-20', 'somente_pendentes' => 1]));
+verificar('data com hora e data pura dão o mesmo resultado',
+    $comHora['totais']['qtd'] === $semHora['totais']['qtd'],
+    "{$comHora['totais']['qtd']} != {$semHora['totais']['qtd']}");
+verificar('quitado no próprio dia já não conta como pendente naquele dia',
+    $semHora['totais']['qtd'] === $depoisDaColuna['totais']['qtd']);
+
+// Sem a coluna, o painel precisa continuar de pé usando só o histórico de lotes.
+$suportaDropColumn = true;
+try {
+    $pdo->exec('ALTER TABLE ' . OXI_TB_PRECATORIO . ' DROP COLUMN ' . OXI_COL_DATA_QUITACAO);
+} catch (PDOException $e) {
+    $suportaDropColumn = false;
+    echo "  (SQLite sem DROP COLUMN: teste de ausência da coluna pulado)\n";
+}
+if ($suportaDropColumn) {
+    verificar('a ausência da coluna é detectada', oxigenacao_coluna_quitacao_existe($pdo) === false);
+    $semColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
+    verificar('sem a coluna, a foto volta a usar só o histórico de lotes',
+        $semColuna['totais']['qtd'] === $depois['totais']['qtd'],
+        "{$semColuna['totais']['qtd']} != {$depois['totais']['qtd']}");
+    $coberturaSemColuna = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => '2024-08-01']));
+    verificar('sem a coluna, nada é contado como data exata',
+        $coberturaSemColuna['tem_coluna_data'] === false
+        && $coberturaSemColuna['quitados_data_exata'] === 0);
+    $pdo->exec('ALTER TABLE ' . OXI_TB_PRECATORIO . ' ADD COLUMN ' . OXI_COL_DATA_QUITACAO . ' TEXT');
+}
+
+$pdo->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET ' . OXI_COL_DATA_QUITACAO . ' = NULL');
 $pdo->exec('DELETE FROM ' . OXI_TB_BATCH . ' WHERE idBatchControl IN (999001, 999002, 999003)');
 $restaurado = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
 verificar('sem rodada registrada, o quitado segue fora dos pendentes',
@@ -434,6 +554,12 @@ verificar('lista de consultores vem preenchida', count($opcoesConsultor) > 0);
 verificar('consultores têm id e nome',
     !array_filter($opcoesConsultor, function ($c) {
         return $c['Negociador'] === null || $c['FirstName'] === null;
+    }));
+
+$opcoesNatureza = oxigenacao_opcoes_natureza($pdo);
+verificar('lista de naturezas vem preenchida com id e nome',
+    count($opcoesNatureza) > 0 && !array_filter($opcoesNatureza, function ($n) {
+        return $n['natuPrec_id'] === null || $n['Natureza'] === null;
     }));
 
 $mapaStatus = oxigenacao_mapa_status($pdo);
