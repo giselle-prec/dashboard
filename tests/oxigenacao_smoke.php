@@ -311,19 +311,21 @@ sort($statusComEnte);
 sort($statusNaPizza);
 verificar('todo status da pizza tem quebra por ente', $statusComEnte === $statusNaPizza);
 
-$somaCruzada = 0;
-$divergenteCruzado = [];
-foreach ($agregados['por_status_destino'] as $linha) {
-    $entesDoStatus = $agregados['por_status_ente'][$linha['rotulo']];
-    $soma = array_sum(array_column($entesDoStatus, 'qtd'));
-    $somaCruzada += $soma;
-    if ($soma !== $linha['qtd']) {
-        $divergenteCruzado[] = $linha['rotulo'] . ": {$soma} != {$linha['qtd']}";
+foreach (['por_status_ente' => 'ente', 'por_status_consultor' => 'consultor'] as $cruzamento => $rotuloCruz) {
+    $somaCruzada = 0;
+    $divergenteCruzado = [];
+    foreach ($agregados['por_status_destino'] as $linha) {
+        $doStatus = $agregados[$cruzamento][$linha['rotulo']];
+        $soma = array_sum(array_column($doStatus, 'qtd'));
+        $somaCruzada += $soma;
+        if ($soma !== $linha['qtd']) {
+            $divergenteCruzado[] = $linha['rotulo'] . ": {$soma} != {$linha['qtd']}";
+        }
     }
+    verificar("a quebra por {$rotuloCruz} soma o total do status",
+        count($divergenteCruzado) === 0, implode(' | ', $divergenteCruzado));
+    verificar("o cruzamento por {$rotuloCruz} cobre todos os eventos", $somaCruzada === count($eventos));
 }
-verificar('a quebra por ente soma o total do status',
-    count($divergenteCruzado) === 0, implode(' | ', $divergenteCruzado));
-verificar('o cruzamento cobre todos os eventos', $somaCruzada === count($eventos));
 
 $datasOrdenadas = array_column($agregados['por_dia'], 'rotulo');
 $copia = $datasOrdenadas;
@@ -543,10 +545,16 @@ verificar('sem rodada registrada, o quitado segue fora dos pendentes',
 
 echo "\nOpções dos filtros:\n";
 
+// Lixo gravado na coluna varchar não pode chegar ao filtro.
+$pdo->exec("INSERT INTO " . OXI_TB_PRECATORIO . " (precatorio_id, Orcamento) VALUES (999901, 'NULL'), (999902, '24')");
 $opcoesOrcamento = oxigenacao_opcoes_orcamento($pdo);
+$pdo->exec('DELETE FROM ' . OXI_TB_PRECATORIO . ' WHERE precatorio_id IN (999901, 999902)');
+
 $anos = array_column($opcoesOrcamento, 'Orcamento');
 verificar('lista de orçamentos vem preenchida e sem repetição',
     count($anos) > 0 && count($anos) === count(array_unique($anos)));
+verificar('orçamentos inválidos ficam fora da lista',
+    !in_array('NULL', $anos, true) && !in_array('24', $anos, true), implode(', ', $anos));
 verificar('orçamentos vêm do mais recente para o mais antigo', $anos === array_reverse(array_values(array_unique($anos))) || $anos[0] >= $anos[count($anos) - 1]);
 
 $opcoesConsultor = oxigenacao_opcoes_consultor($pdo);

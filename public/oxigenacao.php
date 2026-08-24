@@ -19,6 +19,21 @@
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
+<style>
+    /* O navegador dimensiona a caixa do <select multiple> em size linhas, mas o
+       padding vertical do .form-select fica DENTRO da área rolável: sobra
+       espaço para mais meia linha, que aparece cortada em cima da borda. Sem o
+       padding, as 6 linhas fecham exatamente com a caixa. */
+    .filtro-lista {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+    /* Espaço para a legenda do gráfico de status, que fica à direita. */
+    #chart-status-destino {
+        height: 380px;
+    }
+</style>
+
 <div class="container-fluid" style="max-width: 1400px;">
     <h2>Painel de Oxigenação</h2>
     <p class="text-muted">
@@ -34,7 +49,7 @@
                     <label for="ente_id" class="form-label">Ente</label>
                     <input type="search" class="form-control form-control-sm mb-1" id="busca_ente"
                            placeholder="Buscar ente..." data-filtra="#ente_id" autocomplete="off">
-                    <select class="form-select" id="ente_id" name="ente_id" multiple size="6">
+                    <select class="form-select filtro-lista" id="ente_id" name="ente_id" multiple size="6">
                         <?php foreach ($read_ente as $ente): ?>
                         <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                         <?php endforeach; ?>
@@ -45,7 +60,7 @@
                     <label for="consultor_id" class="form-label">Consultor</label>
                     <input type="search" class="form-control form-control-sm mb-1" id="busca_consultor"
                            placeholder="Buscar consultor..." data-filtra="#consultor_id" autocomplete="off">
-                    <select class="form-select" id="consultor_id" name="consultor_id" multiple size="6">
+                    <select class="form-select filtro-lista" id="consultor_id" name="consultor_id" multiple size="6">
                         <?php foreach ($consultores as $consultor): ?>
                         <option value="<?php echo htmlspecialchars($consultor['Negociador']); ?>"><?php
                             echo htmlspecialchars(trim($consultor['FirstName'] . ' ' . (string)$consultor['LastName']));
@@ -56,7 +71,7 @@
                 </div>
                 <div class="col-md-2">
                     <label for="orcamento" class="form-label">Orçamento</label>
-                    <select class="form-select" id="orcamento" name="orcamento" multiple size="6">
+                    <select class="form-select filtro-lista" id="orcamento" name="orcamento" multiple size="6">
                         <?php foreach ($orcamentos as $orcamento): ?>
                         <option value="<?php echo htmlspecialchars($orcamento['Orcamento']); ?>"><?php echo htmlspecialchars($orcamento['Orcamento']); ?></option>
                         <?php endforeach; ?>
@@ -65,7 +80,7 @@
                 </div>
                 <div class="col-md-2">
                     <label for="natureza_id" class="form-label">Natureza</label>
-                    <select class="form-select" id="natureza_id" name="natureza_id" multiple size="6">
+                    <select class="form-select filtro-lista" id="natureza_id" name="natureza_id" multiple size="6">
                         <?php foreach ($naturezas as $natureza): ?>
                         <option value="<?php echo htmlspecialchars($natureza['natuPrec_id']); ?>"><?php echo htmlspecialchars($natureza['Natureza']); ?></option>
                         <?php endforeach; ?>
@@ -187,12 +202,20 @@
                 <div class="col-md-6">
                     <div id="chart-consultor" style="height: 350px;"></div>
                 </div>
-                <div class="col-md-6">
-                    <div id="chart-status-destino" style="height: 350px;"></div>
-                    <div class="form-text">Clique em uma fatia para ver os entes daquele status.</div>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <div id="chart-status-destino"></div>
+                    <div class="form-text text-center">
+                        Clique em uma fatia para ver a quebra por ente e por consultor daquele status.
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <div id="chart-status-ente" style="height: 350px;"></div>
+                </div>
+                <div class="col-md-6">
+                    <div id="chart-status-consultor" style="height: 350px;"></div>
                 </div>
             </div>
 
@@ -270,8 +293,9 @@
         (<code>HistoricoContato.ResultContatoId</code>). Por isso:
         <ul class="mb-0">
             <li>A data de oxigenação é a do primeiro contato cujo resultado saiu da família <em>Sem Tentativa</em>.</li>
-            <li>Na foto por data, o status é o resultado do último contato até aquele dia; sem contato, o precatório
-                aparece como <em>Sem Tentativa</em>.</li>
+            <li>Na foto de uma data passada, o status é o resultado do último contato até aquele dia; sem contato, o
+                precatório aparece como <em>Sem Tentativa</em>. Na data de hoje o painel usa o status atual da tabela
+                de precatórios, que é exato e não depende do histórico.</li>
             <li>Mudanças feitas fora do fluxo de contato (ex.: <em>Pago pelo ente</em>, <em>Pausado</em>, alterações em
                 lote) não estão no histórico e não são reconstruídas.</li>
             <li>&quot;Pendentes de pagamento na data&quot; parte do <code>prec_pg</code> e busca a data da quitação em

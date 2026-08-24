@@ -208,6 +208,11 @@
         chart.tooltip().format(function () {
             return formatarMetrica(this.value, metrica);
         });
+        // O gráfico ocupa a linha inteira, então a legenda cabe à direita.
+        chart.legend()
+            .position('right')
+            .itemsLayout('vertical')
+            .align('center');
         chart.listen('pointClick', function (e) {
             var status = null;
             if (e.point && typeof e.point.get === 'function') {
@@ -220,32 +225,35 @@
             }
             // Clicar de novo no mesmo status desfaz a seleção.
             statusSelecionado = (statusSelecionado === status) ? null : status;
-            graficoStatusEnte(metricaPeriodo());
+            graficosDoStatus(metricaPeriodo());
         });
         desenhar('chart-status-destino', chart);
     }
 
-    // Detalhamento do status escolhido na pizza: quantos precatórios de cada
-    // ente foram para aquele status.
-    function graficoStatusEnte(metrica) {
-        var container = $('#chart-status-ente');
+    // Detalhamento do status escolhido na pizza, em um dos dois recortes.
+    function graficoDetalheStatus(id, cruzamento, titulo, metrica) {
+        var container = $('#' + id);
 
         if (!statusSelecionado || !ultimoPeriodo) {
-            if (charts['chart-status-ente']) {
-                charts['chart-status-ente'].dispose();
-                delete charts['chart-status-ente'];
+            if (charts[id]) {
+                charts[id].dispose();
+                delete charts[id];
             }
             container.empty().append(
                 '<div class="text-muted d-flex align-items-center justify-content-center h-100">' +
-                'Clique em um status ao lado para ver a quebra por ente.</div>'
+                'Selecione um status no gráfico acima.</div>'
             );
             return;
         }
 
         container.empty();
-        var dados = (ultimoPeriodo.por_status_ente || {})[statusSelecionado] || [];
-        graficoBarras('chart-status-ente', dados, 'Entes que foram para "' + statusSelecionado + '"',
-            metrica, TOP_ENTES);
+        var dados = ((ultimoPeriodo[cruzamento] || {})[statusSelecionado]) || [];
+        graficoBarras(id, dados, titulo + ' — "' + statusSelecionado + '"', metrica, TOP_ENTES);
+    }
+
+    function graficosDoStatus(metrica) {
+        graficoDetalheStatus('chart-status-ente', 'por_status_ente', 'Por ente', metrica);
+        graficoDetalheStatus('chart-status-consultor', 'por_status_consultor', 'Por consultor', metrica);
     }
 
     function colunasEventos() {
@@ -318,7 +326,7 @@
         if (statusSelecionado && !(ultimoPeriodo.por_status_ente || {})[statusSelecionado]) {
             statusSelecionado = null;
         }
-        graficoStatusEnte(metrica);
+        graficosDoStatus(metrica);
     }
 
     function carregarPeriodo() {
@@ -399,8 +407,15 @@
         var aviso = $('#aviso-cobertura');
         var cobertura = ultimaFoto && ultimaFoto.cobertura;
 
-        if (!cobertura || !$('#somente_pendentes').is(':checked')) {
-            aviso.addClass('d-none').empty();
+        if (!cobertura) {
+            if (ultimaFoto && ultimaFoto.usa_status_atual) {
+                aviso.removeClass('d-none alert-warning').addClass('alert-info').text(
+                    'Na data de hoje o painel usa o status atual do precatório: é exato e inclui as mudanças ' +
+                    'feitas fora do fluxo de contato.'
+                );
+            } else {
+                aviso.addClass('d-none').empty();
+            }
             return;
         }
 
@@ -412,6 +427,11 @@
 
         var partes = [];
         var aproximado = semData > 0;
+
+        if (ultimaFoto.usa_status_atual) {
+            partes.push('Na data de hoje o status vem da própria tabela de precatórios: é exato e inclui as ' +
+                'mudanças feitas fora do fluxo de contato.');
+        }
 
         if (!aproximado) {
             partes.push('Número exato: todos os precatórios quitados destes filtros têm data de quitação registrada (' +
@@ -541,7 +561,7 @@
 
     $(function () {
         ligarBuscaDeOpcoes();
-        graficoStatusEnte(metricaPeriodo());
+        graficosDoStatus(metricaPeriodo());
 
         $('#form-periodo').on('submit', function (e) {
             e.preventDefault();

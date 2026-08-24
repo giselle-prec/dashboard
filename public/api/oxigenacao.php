@@ -12,13 +12,18 @@ try {
         $filtros = oxigenacao_parse_filtros($_GET, 'foto');
         $foto = oxigenacao_foto_por_data($pdo, $filtros);
 
+        // A cobertura da reconstrução de quitação custa uma varredura inteira e
+        // só é exibida quando o recorte de pendentes está ligado.
         echo json_encode([
-            'ok'          => true,
-            'data_ref'    => $filtros['data_ref'],
-            'linhas'      => $foto['linhas'],
-            'totais'      => $foto['totais'],
-            'status_mapa' => oxigenacao_mapa_status($pdo),
-            'cobertura'   => oxigenacao_cobertura_quitacao($pdo, $filtros),
+            'ok'               => true,
+            'data_ref'         => $filtros['data_ref'],
+            'linhas'           => $foto['linhas'],
+            'totais'           => $foto['totais'],
+            'usa_status_atual' => $foto['usa_status_atual'],
+            'status_mapa'      => oxigenacao_mapa_status($pdo),
+            'cobertura'        => $filtros['somente_pendentes']
+                ? oxigenacao_cobertura_quitacao($pdo, $filtros)
+                : null,
         ]);
     } elseif ($acao === 'oxigenacao') {
         $filtros = oxigenacao_parse_filtros($_GET, 'periodo');
@@ -37,7 +42,8 @@ try {
             'por_ente'            => $agregados['por_ente'],
             'por_consultor'       => $agregados['por_consultor'],
             'por_status_destino'  => $agregados['por_status_destino'],
-            'por_status_ente'     => $agregados['por_status_ente'],
+            'por_status_ente'      => $agregados['por_status_ente'],
+            'por_status_consultor' => $agregados['por_status_consultor'],
             'eventos'             => $truncado ? array_slice($eventos, 0, OXI_LIMITE_DETALHE) : $eventos,
             'eventos_truncados'   => $truncado,
             'limite_detalhe'      => OXI_LIMITE_DETALHE,
