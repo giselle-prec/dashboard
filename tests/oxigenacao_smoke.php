@@ -369,6 +369,23 @@ $semTentativaNaFoto = array_filter($foto['linhas'], function ($l) {
 });
 verificar('precatório sem contato aparece como Sem Tentativa', count($semTentativaNaFoto) === 1);
 
+$linhaSemTentativa = array_values($semTentativaNaFoto)[0];
+verificar('a linha de Sem Tentativa vem marcada para o gráfico ignorar',
+    $linhaSemTentativa['SemTentativa'] === true);
+verificar('os demais status não vêm marcados',
+    !array_filter($foto['linhas'], function ($l) {
+        return $l['SemTentativa'] && $l['Status'] !== OXI_ROTULO_SEM_TENTATIVA;
+    }));
+verificar('total de Sem Tentativa bate com a linha correspondente',
+    $foto['totais']['sem_tentativa_qtd'] === $linhaSemTentativa['Qtd']);
+verificar('Sem Tentativa + demais status fecham o total',
+    $foto['totais']['sem_tentativa_qtd'] + $foto['totais']['outros_qtd'] === $foto['totais']['qtd']
+    && abs($foto['totais']['sem_tentativa_valor'] + $foto['totais']['outros_valor']
+           - $foto['totais']['valor']) < 0.01);
+verificar('demais status somam as linhas fora de Sem Tentativa',
+    $foto['totais']['outros_qtd'] === array_sum(array_column(array_filter($foto['linhas'],
+        function ($l) { return !$l['SemTentativa']; }), 'Qtd')));
+
 // Precatórios já oxigenados até a data não podem estar no balde "sem contato".
 $oxigenadosAte = count(array_filter($eventos, function ($e) use ($dataRef) {
     return $e['DataOxigenacao'] <= $dataRef;

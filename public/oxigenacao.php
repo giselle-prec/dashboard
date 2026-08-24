@@ -20,14 +20,6 @@
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
 <style>
-    /* O navegador dimensiona a caixa do <select multiple> em size linhas, mas o
-       padding vertical do .form-select fica DENTRO da área rolável: sobra
-       espaço para mais meia linha, que aparece cortada em cima da borda. Sem o
-       padding, as 6 linhas fecham exatamente com a caixa. */
-    .filtro-lista {
-        padding-top: 0;
-        padding-bottom: 0;
-    }
     /* Espaço para a legenda do gráfico de status, que fica à direita. */
     #chart-status-destino {
         height: 380px;
@@ -46,10 +38,13 @@
             <h6 class="card-title">Filtros (valem para as duas abas)</h6>
             <div class="row g-3">
                 <div class="col-md-3">
-                    <label for="ente_id" class="form-label">Ente</label>
-                    <input type="search" class="form-control form-control-sm mb-1" id="busca_ente"
-                           placeholder="Buscar ente..." data-filtra="#ente_id" autocomplete="off">
-                    <select class="form-select filtro-lista" id="ente_id" name="ente_id" multiple size="6">
+                    <label for="ente_id" class="form-label">
+                        Ente
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#ente_id">selecionar todos</button> ·
+                        <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#ente_id">limpar</button>
+                    </label>
+                    <select class="form-select select2-multi" id="ente_id" name="ente_id[]" multiple
+                            data-placeholder="Todos os Entes">
                         <?php foreach ($read_ente as $ente): ?>
                         <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                         <?php endforeach; ?>
@@ -57,10 +52,13 @@
                     <div class="form-text">Nenhum selecionado = todos</div>
                 </div>
                 <div class="col-md-3">
-                    <label for="consultor_id" class="form-label">Consultor</label>
-                    <input type="search" class="form-control form-control-sm mb-1" id="busca_consultor"
-                           placeholder="Buscar consultor..." data-filtra="#consultor_id" autocomplete="off">
-                    <select class="form-select filtro-lista" id="consultor_id" name="consultor_id" multiple size="6">
+                    <label for="consultor_id" class="form-label">
+                        Consultor
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#consultor_id">selecionar todos</button> ·
+                        <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#consultor_id">limpar</button>
+                    </label>
+                    <select class="form-select select2-multi" id="consultor_id" name="consultor_id[]" multiple
+                            data-placeholder="Todos os consultores">
                         <?php foreach ($consultores as $consultor): ?>
                         <option value="<?php echo htmlspecialchars($consultor['Negociador']); ?>"><?php
                             echo htmlspecialchars(trim($consultor['FirstName'] . ' ' . (string)$consultor['LastName']));
@@ -70,22 +68,30 @@
                     <div class="form-text">Consultor atual do precatório</div>
                 </div>
                 <div class="col-md-2">
-                    <label for="orcamento" class="form-label">Orçamento</label>
-                    <select class="form-select filtro-lista" id="orcamento" name="orcamento" multiple size="6">
+                    <label for="orcamento" class="form-label">
+                        Orçamento
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#orcamento">todos</button> ·
+                        <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#orcamento">limpar</button>
+                    </label>
+                    <select class="form-select select2-multi" id="orcamento" name="orcamento[]" multiple
+                            data-placeholder="Todos">
                         <?php foreach ($orcamentos as $orcamento): ?>
                         <option value="<?php echo htmlspecialchars($orcamento['Orcamento']); ?>"><?php echo htmlspecialchars($orcamento['Orcamento']); ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <div class="form-text">Nenhum = todos</div>
                 </div>
                 <div class="col-md-2">
-                    <label for="natureza_id" class="form-label">Natureza</label>
-                    <select class="form-select filtro-lista" id="natureza_id" name="natureza_id" multiple size="6">
+                    <label for="natureza_id" class="form-label">
+                        Natureza
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#natureza_id">todas</button> ·
+                        <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#natureza_id">limpar</button>
+                    </label>
+                    <select class="form-select select2-multi" id="natureza_id" name="natureza_id[]" multiple
+                            data-placeholder="Todas">
                         <?php foreach ($naturezas as $natureza): ?>
                         <option value="<?php echo htmlspecialchars($natureza['natuPrec_id']); ?>"><?php echo htmlspecialchars($natureza['Natureza']); ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <div class="form-text">Nenhuma = todas</div>
                 </div>
                 <div class="col-md-2">
                     <label for="valor_min" class="form-label">Valor mínimo (R$)</label>
@@ -272,6 +278,24 @@
                         </div>
                     </div>
                 </div>
+                <div class="col-md-4">
+                    <div class="card text-bg-light h-100">
+                        <div class="card-body">
+                            <h6 class="card-title">Sem Tentativa <small class="text-muted">(aproximado)</small></h6>
+                            <p class="card-text fs-5 mb-0" id="foto-sem-tentativa-qtd">-</p>
+                            <p class="card-text" id="foto-sem-tentativa-valor">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-bg-info h-100">
+                        <div class="card-body">
+                            <h6 class="card-title">Demais status</h6>
+                            <p class="card-text fs-5 mb-0" id="foto-outros-qtd">-</p>
+                            <p class="card-text" id="foto-outros-valor">-</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="row g-3 mb-4">
@@ -317,6 +341,8 @@
 <script src="https://cdn.datatables.net/v/bs5/dt-2.1.8/b-3.1.2/datatables.min.js"></script>
 <!-- AnyChart -->
 <script src="https://cdn.anychart.com/releases/latest/js/anychart-base.min.js"></script>
+<!-- Select2 (multi-select com busca; independente do JS do Bootstrap) -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script src="js/oxigenacao.js"></script>
 

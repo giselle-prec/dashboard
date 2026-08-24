@@ -386,6 +386,10 @@
                     StatusId: linha.ParentId === null ? linha.StatusId : linha.ParentId,
                     Status: rotulo,
                     ParentId: null,
+                    // Agrupando por pai, os filhos de "Sem Tentativa" (Valor
+                    // Baixo, Inserido pelo Robô) caem no mesmo balde e herdam
+                    // o tratamento à parte.
+                    SemTentativa: rotulo === 'Sem Tentativa',
                     Qtd: 0,
                     Valor: 0
                 };
@@ -476,17 +480,27 @@
         var campo = metrica === 'valor' ? 'Valor' : 'Qtd';
         var linhas = linhasFoto(ultimaFoto);
 
-        $('#foto-total-qtd').text(formatarInteiro(ultimaFoto.totais.qtd) + ' precatórios');
-        $('#foto-total-valor').text(formatarMoeda(ultimaFoto.totais.valor));
+        var totais = ultimaFoto.totais;
+        $('#foto-total-qtd').text(formatarInteiro(totais.qtd) + ' precatórios');
+        $('#foto-total-valor').text(formatarMoeda(totais.valor));
+        $('#foto-sem-tentativa-qtd').text(formatarInteiro(totais.sem_tentativa_qtd) + ' precatórios');
+        $('#foto-sem-tentativa-valor').text(formatarMoeda(totais.sem_tentativa_valor));
+        $('#foto-outros-qtd').text(formatarInteiro(totais.outros_qtd) + ' precatórios');
+        $('#foto-outros-valor').text(formatarMoeda(totais.outros_valor));
 
-        var series = linhas.slice().sort(function (a, b) {
+        // Sem Tentativa sai do gráfico: é quase sempre a maior fatia e achataria
+        // todas as outras. O número dele está no card ao lado do total.
+        var series = linhas.filter(function (linha) {
+            return !linha.SemTentativa;
+        }).sort(function (a, b) {
             return b[campo] - a[campo];
         }).map(function (linha) {
             return { x: linha.Status, value: linha[campo] };
         });
 
         var chart = anychart.bar(series);
-        chart.title('Precatórios por status em ' + formatarData(ultimaFoto.data_ref) + ' — ' + rotuloMetrica(metrica));
+        chart.title('Status em ' + formatarData(ultimaFoto.data_ref) + ', exceto Sem Tentativa — ' +
+            rotuloMetrica(metrica));
         chart.tooltip().format(function () {
             return formatarMetrica(this.value, metrica);
         });
@@ -535,32 +549,30 @@
             });
     }
 
-    // Filtro de digitação sobre listas longas (Ente e Consultor). Opções já
-    // selecionadas nunca somem, para não perder a seleção ao buscar de novo.
-    function ligarBuscaDeOpcoes() {
-        $('input[data-filtra]').each(function () {
-            var campo = $(this);
-            var select = $(campo.data('filtra'));
-            var opcoes = select.find('option').map(function () {
-                return { elemento: $(this), texto: $(this).text().toLowerCase() };
-            }).get();
-
-            campo.on('input', function () {
-                var termo = campo.val().toLowerCase().trim();
-                opcoes.forEach(function (opcao) {
-                    var visivel = termo === '' ||
-                        opcao.texto.indexOf(termo) !== -1 ||
-                        opcao.elemento.prop('selected');
-                    // hidden, e não display:none, porque é o que os navegadores
-                    // respeitam dentro de um <select multiple>.
-                    opcao.elemento.prop('hidden', !visivel);
-                });
+    // Mesmo padrão do Painel de Prospecção.
+    function ligarSelect2() {
+        $('.select2-multi').each(function () {
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: $(this).data('placeholder') || '',
+                closeOnSelect: false
             });
+        });
+
+        $('.btn-selecionar-todos').on('click', function () {
+            var select = $($(this).data('target'));
+            var todos = select.find('option').map(function () { return $(this).val(); }).get();
+            select.val(todos).trigger('change');
+        });
+
+        $('.btn-limpar-selecao').on('click', function () {
+            $($(this).data('target')).val(null).trigger('change');
         });
     }
 
     $(function () {
-        ligarBuscaDeOpcoes();
+        ligarSelect2();
         graficosDoStatus(metricaPeriodo());
 
         $('#form-periodo').on('submit', function (e) {

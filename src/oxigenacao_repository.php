@@ -703,6 +703,8 @@ function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
     $porRotulo = [];
     $totalQtd = 0;
     $totalValor = 0.0;
+    $semTentativaQtd = 0;
+    $semTentativaValor = 0.0;
     foreach ($linhas as $linha) {
         $qtd    = (int)$linha['Qtd'];
         $valor  = (float)$linha['Valor'];
@@ -710,13 +712,22 @@ function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
         $totalQtd += $qtd;
         $totalValor += $valor;
 
+        // "Sem Tentativa" é a única faixa aproximada da foto (sai por diferença,
+        // de quem nunca teve contato) e costuma ser a maioria da base, então é
+        // contabilizada à parte para não engolir o resto do gráfico.
+        if ($rotulo === OXI_ROTULO_SEM_TENTATIVA) {
+            $semTentativaQtd += $qtd;
+            $semTentativaValor += $valor;
+        }
+
         if (!isset($porRotulo[$rotulo])) {
             $porRotulo[$rotulo] = [
-                'StatusId' => null,
-                'Status'   => $rotulo,
-                'ParentId' => null,
-                'Qtd'      => 0,
-                'Valor'    => 0.0,
+                'StatusId'     => null,
+                'Status'       => $rotulo,
+                'ParentId'     => null,
+                'SemTentativa' => $rotulo === OXI_ROTULO_SEM_TENTATIVA,
+                'Qtd'          => 0,
+                'Valor'        => 0.0,
             ];
         }
         $porRotulo[$rotulo]['Qtd'] += $qtd;
@@ -736,7 +747,14 @@ function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
 
     return [
         'linhas' => $resultado,
-        'totais' => ['qtd' => $totalQtd, 'valor' => $totalValor],
+        'totais' => [
+            'qtd'                 => $totalQtd,
+            'valor'               => $totalValor,
+            'sem_tentativa_qtd'   => $semTentativaQtd,
+            'sem_tentativa_valor' => $semTentativaValor,
+            'outros_qtd'          => $totalQtd - $semTentativaQtd,
+            'outros_valor'        => $totalValor - $semTentativaValor,
+        ],
         'usa_status_atual' => $usaStatusAtual,
     ];
 }
