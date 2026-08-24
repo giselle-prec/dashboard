@@ -275,7 +275,7 @@
             <li>Mudanças feitas fora do fluxo de contato (ex.: <em>Pago pelo ente</em>, <em>Pausado</em>, alterações em
                 lote) não estão no histórico e não são reconstruídas.</li>
             <li>&quot;Pendentes de pagamento na data&quot; parte do <code>prec_pg</code> e busca a data da quitação em
-                três fontes, nesta ordem: a coluna <code>Precatorio.DataQuitacao</code>; a data da rodada de batch que
+                três fontes, nesta ordem: a coluna <code>Precatorio.DataQuitacaoBatch</code>; a data da rodada de batch que
                 quitou o precatório (<code>Precatorio.batch</code> = <code>BatchControl.n_batch_quit</code> do mesmo
                 ente); e, se nenhuma das duas tiver a data, o precatório entra como já quitado em qualquer data. O
                 aviso acima do gráfico mostra quantos estão em cada situação e o quanto o número reconstruído difere

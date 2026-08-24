@@ -19,7 +19,7 @@
 //   da foto por data é aproximada para esses status.
 // - Se o precatório está quitado hoje é o prec_pg quem diz. A data da quitação
 //   sai de três fontes, nesta ordem:
-//     1. Precatorio.DataQuitacao (coluna nova, preenchida nas alterações em
+//     1. Precatorio.DataQuitacaoBatch (coluna nova, preenchida nas alterações em
 //        lote) — a fonte exata, quando existir;
 //     2. o histórico de lotes: cada rodada de batch reserva três números
 //        (n_batch_new, n_batch_upd, n_batch_quit) e grava o usado em
@@ -54,7 +54,7 @@ defined('OXI_TB_USUARIO')    || define('OXI_TB_USUARIO',    'precappapp.Usuario'
 // Coluna com a data em que o tribunal quitou o precatório. Ainda não existe em
 // todas as bases: quando estiver ausente, a reconstrução cai para o histórico
 // de lotes sozinho. Trocar aqui se a coluna receber outro nome.
-defined('OXI_COL_DATA_QUITACAO') || define('OXI_COL_DATA_QUITACAO', 'DataQuitacao');
+defined('OXI_COL_DATA_QUITACAO') || define('OXI_COL_DATA_QUITACAO', 'DataQuitacaoBatch');
 
 // Teto de execução das consultas pesadas (hint do MySQL 8; outros bancos leem
 // como comentário). Sem isso, uma consulta lenta prende o servidor de
@@ -425,13 +425,17 @@ function oxigenacao_base_sem_tentativa(PDO $pdo, array $filtros) {
 // que quitou o precatório. Números reaproveitados entre rodadas próximas são
 // resolvidos pela data mais antiga — na prática as rodadas em conflito estão a
 // no máximo um dia de distância.
+//
+// O resultado se chama DataRodadaQuitacao, e não DataQuitacao, para não se
+// confundir com a coluna DataQuitacaoBatch da tabela Precatorio: esta é a data
+// informada pelo tribunal, aquela é a data em que a rodada de batch rodou.
 function oxigenacao_sql_quitacao() {
     $batch = OXI_TB_BATCH;
     return "
         SELECT
             CAST(b.n_batch_quit AS SIGNED) AS BatchQuit,
             CAST(b.ente_id AS SIGNED)      AS EnteId,
-            MIN(b.data_batch)              AS DataQuitacao
+            MIN(b.data_batch)              AS DataRodadaQuitacao
         FROM {$batch} b
         WHERE b.n_batch_quit IS NOT NULL
           AND CAST(b.n_batch_quit AS SIGNED) <> 0
@@ -481,14 +485,14 @@ function oxigenacao_filtro_pendente_pagamento(PDO $pdo, array $filtros, array &$
 
     if (!oxigenacao_coluna_quitacao_existe($pdo)) {
         $params[] = $limite;
-        return " AND ({$alias}.prec_pg IS NULL OR {$aliasQuit}.DataQuitacao >= ?)";
+        return " AND ({$alias}.prec_pg IS NULL OR {$aliasQuit}.DataRodadaQuitacao >= ?)";
     }
 
     $params[] = $limite;
     $params[] = $limite;
     return " AND ({$alias}.prec_pg IS NULL
                   OR ({$alias}.{$col} IS NOT NULL AND {$alias}.{$col} <> '' AND {$alias}.{$col} >= ?)
-                  OR (({$alias}.{$col} IS NULL OR {$alias}.{$col} = '') AND {$aliasQuit}.DataQuitacao >= ?))";
+                  OR (({$alias}.{$col} IS NULL OR {$alias}.{$col} = '') AND {$aliasQuit}.DataRodadaQuitacao >= ?))";
 }
 
 // Quanto da reconstrução de quitação é confiável para os filtros escolhidos:
@@ -518,9 +522,9 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
             SUM(CASE WHEN p.prec_pg IS NULL THEN 1 ELSE 0 END) AS PendentesHoje,
             SUM(CASE WHEN p.prec_pg IS NOT NULL AND {$temDataExata} THEN 1 ELSE 0 END) AS ComDataExata,
             SUM(CASE WHEN p.prec_pg IS NOT NULL AND NOT {$temDataExata}
-                          AND q.DataQuitacao IS NOT NULL THEN 1 ELSE 0 END) AS ComDataLote,
+                          AND q.DataRodadaQuitacao IS NOT NULL THEN 1 ELSE 0 END) AS ComDataLote,
             SUM(CASE WHEN p.prec_pg IS NOT NULL AND NOT {$temDataExata}
-                          AND q.DataQuitacao IS NULL THEN 1 ELSE 0 END) AS SemData
+                          AND q.DataRodadaQuitacao IS NULL THEN 1 ELSE 0 END) AS SemData
         FROM {$precatorio} p
     " . oxigenacao_join_quitacao() . '
         WHERE 1 = 1
