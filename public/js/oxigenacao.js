@@ -6,6 +6,10 @@
 
     var TOP_ENTES = 15;
 
+    // Teto de barras no eixo do tempo: além disso o gráfico deixa de ser legível
+    // e não vale preencher os períodos vazios.
+    var MAX_BALDES = 400;
+
     // Última resposta de cada aba, para trocar métrica/agrupamento sem nova requisição.
     var ultimoPeriodo = null;
     var ultimaFoto = null;
@@ -113,6 +117,13 @@
         return dataIso;
     }
 
+    function rotuloGranularidade(granularidade) {
+        if (granularidade === 'mes') {
+            return 'mês';
+        }
+        return granularidade === 'semana' ? 'semana' : 'dia';
+    }
+
     function rotuloTemporal(chave, granularidade) {
         if (granularidade === 'mes') {
             var partes = chave.split('-');
@@ -124,8 +135,56 @@
         return formatarData(chave);
     }
 
-    function agruparPorDia(porDia, granularidade) {
+    function somarDias(dataIso, dias) {
+        var d = new Date(dataIso + 'T00:00:00');
+        d.setDate(d.getDate() + dias);
+        var mes = ('0' + (d.getMonth() + 1)).slice(-2);
+        var dia = ('0' + d.getDate()).slice(-2);
+        return d.getFullYear() + '-' + mes + '-' + dia;
+    }
+
+    // Todas as chaves entre as duas datas, inclusive as sem nenhuma oxigenação.
+    // Sem isso um mês zerado simplesmente sumiria do eixo, e a média sairia
+    // dividida só pelos períodos que tiveram movimento.
+    function chavesDoPeriodo(inicio, fim, granularidade) {
+        if (!inicio || !fim || fim < inicio) {
+            return [];
+        }
+
+        var chaves = [];
+        var limite = chaveTemporal(fim, granularidade);
+
+        if (granularidade === 'mes') {
+            var ano = parseInt(inicio.substring(0, 4), 10);
+            var mes = parseInt(inicio.substring(5, 7), 10);
+            var chave = inicio.substring(0, 7);
+            while (chave <= limite && chaves.length <= MAX_BALDES) {
+                chaves.push(chave);
+                mes++;
+                if (mes > 12) { mes = 1; ano++; }
+                chave = ano + '-' + ('0' + mes).slice(-2);
+            }
+        } else {
+            var passo = granularidade === 'semana' ? 7 : 1;
+            var atual = chaveTemporal(inicio, granularidade);
+            while (atual <= limite && chaves.length <= MAX_BALDES) {
+                chaves.push(atual);
+                atual = somarDias(atual, passo);
+            }
+        }
+
+        // Faixa larga demais para o eixo: melhor mostrar só o que tem dado do
+        // que desenhar milhares de barras vazias.
+        return chaves.length > MAX_BALDES ? [] : chaves;
+    }
+
+    function agruparPorDia(porDia, granularidade, periodo) {
         var baldes = {};
+
+        (periodo ? chavesDoPeriodo(periodo.inicio, periodo.fim, granularidade) : []).forEach(function (chave) {
+            baldes[chave] = { chave: chave, qtd: 0, valor: 0 };
+        });
+
         porDia.forEach(function (linha) {
             var chave = chaveTemporal(linha.rotulo, granularidade);
             if (!baldes[chave]) {
@@ -158,8 +217,9 @@
         $('#kpi-ticket').text(formatarMoeda(kpis.ticket_medio));
     }
 
-    function graficoTempo(porDia, granularidade, metrica) {
-        var series = agruparPorDia(porDia, granularidade).map(function (balde) {
+    function graficoTempo(porDia, granularidade, metrica, periodo) {
+        var baldes = agruparPorDia(porDia, granularidade, periodo);
+        var series = baldes.map(function (balde) {
             return { x: rotuloTemporal(balde.chave, granularidade), value: balde[metrica] };
         });
 
@@ -172,6 +232,31 @@
             return formatarMetrica(this.value, metrica);
         });
         chart.xAxis().labels().rotation(-45);
+
+        // Linha da média por período. Divide por todos os períodos do intervalo,
+        // inclusive os zerados — média só sobre quem teve movimento seria
+        // otimista. Com um período só não há média a mostrar.
+        if (baldes.length > 1) {
+            var soma = baldes.reduce(function (acumulado, balde) {
+                return acumulado + (Number(balde[metrica]) || 0);
+            }, 0);
+            var media = soma / baldes.length;
+
+            chart.lineMarker()
+                .value(media)
+                .axis(chart.yAxis())
+                .stroke({ color: '#d63384', dash: '5 3', thickness: 2 });
+
+            chart.textMarker()
+                .value(media)
+                .axis(chart.yAxis())
+                .text('Média por ' + rotuloGranularidade(granularidade) + ': ' + formatarMetrica(media, metrica))
+                .align('right')
+                .anchor('right-bottom')
+                .offsetY(-4)
+                .fontColor('#d63384');
+        }
+
         desenhar('chart-tempo', chart);
     }
 
@@ -316,7 +401,7 @@
         var granularidade = $('#granularidade').val();
 
         atualizarKpis(ultimoPeriodo);
-        graficoTempo(ultimoPeriodo.por_dia, granularidade, metrica);
+        graficoTempo(ultimoPeriodo.por_dia, granularidade, metrica, ultimoPeriodo.periodo);
         graficoBarras('chart-ente', ultimoPeriodo.por_ente, 'Top ' + TOP_ENTES + ' entes', metrica, TOP_ENTES);
         graficoBarras('chart-consultor', ultimoPeriodo.por_consultor, 'Por consultor', metrica);
         graficoPizzaStatus(
