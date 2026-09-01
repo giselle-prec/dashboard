@@ -479,12 +479,14 @@
 
         var exatos = Number(cobertura.quitados_data_exata) || 0;
         var porLote = Number(cobertura.quitados_data_lote) || 0;
+        var estimados = Number(cobertura.quitados_estimados) || 0;
         var semData = Number(cobertura.quitados_sem_data) || 0;
         var pendentesHoje = Number(cobertura.pendentes_hoje) || 0;
         var naData = Number(ultimaFoto.totais.qtd) || 0;
+        var prazos = cobertura.prazos || {};
 
         var partes = [];
-        var aproximado = semData > 0;
+        var aproximado = estimados > 0 || semData > 0;
 
         if (ultimaFoto.usa_status_atual) {
             partes.push('Na data de hoje o status vem da própria tabela de precatórios: é exato e inclui as ' +
@@ -496,11 +498,18 @@
                 formatarInteiro(exatos) + ' pela coluna ' + cobertura.coluna_data + ', ' +
                 formatarInteiro(porLote) + ' pelo histórico de lotes).');
         } else {
-            partes.push('Valor aproximado: ' + formatarInteiro(semData) + ' precatórios já quitados não têm data de ' +
-                'quitação em nenhuma fonte e entram como quitados em qualquer data, então o número real de pendentes ' +
-                'nesta data é maior que o mostrado.');
-            partes.push('Com data: ' + formatarInteiro(exatos) + ' pela coluna ' + cobertura.coluna_data + ' e ' +
-                formatarInteiro(porLote) + ' pelo histórico de lotes.');
+            partes.push('Números estimados, não exatos.');
+            partes.push('Com data registrada: ' + formatarInteiro(exatos) + ' pela coluna ' + cobertura.coluna_data +
+                ' e ' + formatarInteiro(porLote) + ' pelo histórico de lotes.');
+            if (estimados > 0) {
+                partes.push(formatarInteiro(estimados) + ' precatórios quitados não têm data registrada e tiveram o ' +
+                    'ano de pagamento estimado pelo orçamento (regime comum + ' + prazos.comum + ' anos, especial + ' +
+                    prazos.especial + ', Estado do Rio + ' + prazos.rj + ').');
+            }
+            if (semData > 0) {
+                partes.push(formatarInteiro(semData) + ' quitados não têm data nem estimativa possível (orçamento ' +
+                    'inválido ou regime do ente desconhecido) e entram como quitados em qualquer data.');
+            }
         }
 
         if (pendentesHoje > 0) {
@@ -541,6 +550,10 @@
         $('#foto-sem-tentativa-valor').text(formatarMoeda(totais.sem_tentativa_valor));
         $('#foto-outros-qtd').text(formatarInteiro(totais.outros_qtd) + ' precatórios');
         $('#foto-outros-valor').text(formatarMoeda(totais.outros_valor));
+
+        var acumulado = ultimaFoto.oxigenados_ate || { qtd: 0, valor: 0 };
+        $('#foto-acumulado-qtd').text(formatarInteiro(acumulado.qtd) + ' precatórios');
+        $('#foto-acumulado-valor').text(formatarMoeda(acumulado.valor));
 
         // Sem Tentativa sai do gráfico: é quase sempre a maior fatia e achataria
         // todas as outras. O número dele está no card ao lado do total.

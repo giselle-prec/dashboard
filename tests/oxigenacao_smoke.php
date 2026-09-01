@@ -129,8 +129,11 @@ $usuarioOutroPerfil = (int)$pdo->query('SELECT usuario_id FROM ' . OXI_TB_USUARI
 $pdo->exec('UPDATE ' . OXI_TB_USUARIO . " SET Active = 0 WHERE usuario_id = {$usuarioInativo}");
 $pdo->exec('UPDATE ' . OXI_TB_USUARIO . " SET PerfilId = 9 WHERE usuario_id = {$usuarioOutroPerfil}");
 
+// Especial vem da tabela Ente e é o que separa o prazo estimado de pagamento
+// (comum + 2 anos, especial + 4, Estado do Rio + 5).
 $pdo->exec('CREATE TABLE ' . OXI_TB_ENTE . ' AS
-            SELECT DISTINCT ente_id, Ente FROM ' . OXI_TB_DETALHE . ' WHERE ente_id IS NOT NULL');
+            SELECT DISTINCT ente_id, Ente, Especial FROM ' . OXI_TB_DETALHE . '
+            WHERE ente_id IS NOT NULL');
 $pdo->exec('CREATE TABLE ' . OXI_TB_NATUREZA . ' AS
             SELECT DISTINCT NaturezaId AS natuPrec_id, Natureza FROM ' . OXI_TB_DETALHE . '
             WHERE NaturezaId IS NOT NULL');
@@ -414,11 +417,37 @@ verificar('filtro de pendentes de pagamento reduz o total',
     $fotoPendentes['totais']['qtd'] < $foto['totais']['qtd'],
     "{$fotoPendentes['totais']['qtd']} vs {$foto['totais']['qtd']}");
 
-$stmt = $pdo->prepare('SELECT COUNT(*) AS Qtd FROM ' . OXI_TB_DETALHE . '
-                       WHERE (DataCadastra IS NULL OR DataCadastra < ?) AND prec_pg IS NULL');
-$stmt->execute([oxigenacao_dia_seguinte($dataRef)]);
-$esperadoPendentes = (int)$stmt->fetch()['Qtd'];
-verificar('total de pendentes bate com a contagem direta',
+// Conferência independente da regra de pendência: sem data em nenhuma fonte na
+// amostra, o que decide é o orçamento mais o prazo do regime do ente.
+$prazoPorEnte = [];
+foreach ($pdo->query('SELECT ente_id, Especial FROM ' . OXI_TB_ENTE)->fetchAll() as $linha) {
+    if ((int)$linha['ente_id'] === OXI_ENTE_ESTADO_RJ) {
+        $prazoPorEnte[(string)$linha['ente_id']] = OXI_PRAZO_ANOS_RJ;
+    } elseif ($linha['Especial'] === '1') {
+        $prazoPorEnte[(string)$linha['ente_id']] = OXI_PRAZO_ANOS_ESPECIAL;
+    } elseif ($linha['Especial'] === '0') {
+        $prazoPorEnte[(string)$linha['ente_id']] = OXI_PRAZO_ANOS_COMUM;
+    }
+}
+$anoRef = (int)substr($dataRef, 0, 4);
+$limiteRef = oxigenacao_dia_seguinte($dataRef);
+$esperadoPendentes = 0;
+foreach ($pdo->query('SELECT EnteId, Orcamento, prec_pg, DataCadastra FROM ' . OXI_TB_PRECATORIO)->fetchAll() as $p) {
+    if ($p['DataCadastra'] !== null && $p['DataCadastra'] >= $limiteRef) {
+        continue;
+    }
+    if ($p['prec_pg'] === null) {
+        $esperadoPendentes++;
+        continue;
+    }
+    $orcamento = (int)$p['Orcamento'];
+    $prazo = $prazoPorEnte[(string)$p['EnteId']] ?? null;
+    if ($prazo !== null && $orcamento >= OXI_ORCAMENTO_MIN && $orcamento <= OXI_ORCAMENTO_MAX
+        && $orcamento + $prazo >= $anoRef) {
+        $esperadoPendentes++;
+    }
+}
+verificar('total de pendentes bate com o cálculo independente da regra',
     $fotoPendentes['totais']['qtd'] === $esperadoPendentes,
     "{$fotoPendentes['totais']['qtd']} != {$esperadoPendentes}");
 
@@ -452,9 +481,12 @@ $quitadosNaAmostra = count(array_filter(
     $pdo->query('SELECT prec_pg FROM ' . OXI_TB_PRECATORIO)->fetchAll(),
     function ($l) { return $l['prec_pg'] !== null; }
 ));
-verificar('as três fontes somam os quitados da amostra',
-    $cobertura['quitados_data_exata'] + $cobertura['quitados_data_lote'] + $cobertura['quitados_sem_data']
-        === $quitadosNaAmostra);
+verificar('as quatro fontes somam os quitados da amostra',
+    $cobertura['quitados_data_exata'] + $cobertura['quitados_data_lote']
+        + $cobertura['quitados_estimados'] + $cobertura['quitados_sem_data'] === $quitadosNaAmostra,
+    "exata={$cobertura['quitados_data_exata']} lote={$cobertura['quitados_data_lote']} "
+    . "estimados={$cobertura['quitados_estimados']} sem={$cobertura['quitados_sem_data']} "
+    . "esperado={$quitadosNaAmostra}");
 verificar('pendentes de hoje é o complemento dos quitados',
     $cobertura['pendentes_hoje'] + $quitadosNaAmostra === (int)$pdo->query(
         'SELECT COUNT(*) AS Qtd FROM ' . OXI_TB_PRECATORIO)->fetch()['Qtd']);
@@ -513,15 +545,13 @@ $pdo->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET ' . OXI_COL_DATA_QUITACAO . " =
             WHERE prec_pg IS NOT NULL AND EnteId = " . (int)$alvo['EnteId'] . '
               AND CAST(batch AS SIGNED) = ' . (int)$alvo['batch']);
 
-$comColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
-verificar('data da coluna vence a data do lote (lote dizia quitado, coluna diz que não)',
-    $comColuna['totais']['qtd'] === $depois['totais']['qtd'] + (int)$alvo['Qtd'],
-    "{$comColuna['totais']['qtd']} != " . ($depois['totais']['qtd'] + (int)$alvo['Qtd']));
-
-$depoisDaColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2025-01-05', 'somente_pendentes' => 1]));
+// As duas datas ficam no mesmo ano de propósito: assim a estimativa por
+// orçamento contribui igual nos dois lados e a diferença isola a coluna.
+$comColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-12-01', 'somente_pendentes' => 1]));
+$depoisDaColuna = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-12-31', 'somente_pendentes' => 1]));
 verificar('passada a data da coluna, o precatório sai dos pendentes',
-    $depoisDaColuna['totais']['qtd'] === $comColuna['totais']['qtd'] - (int)$alvo['Qtd'],
-    "{$depoisDaColuna['totais']['qtd']} vs {$comColuna['totais']['qtd']}");
+    $comColuna['totais']['qtd'] - $depoisDaColuna['totais']['qtd'] === (int)$alvo['Qtd'],
+    "{$comColuna['totais']['qtd']} - {$depoisDaColuna['totais']['qtd']} != {$alvo['Qtd']}");
 
 $coberturaColuna = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => '2024-08-01']));
 verificar('cobertura separa data exata de data por lote',
@@ -540,7 +570,8 @@ verificar('data com hora e data pura dão o mesmo resultado',
     $comHora['totais']['qtd'] === $semHora['totais']['qtd'],
     "{$comHora['totais']['qtd']} != {$semHora['totais']['qtd']}");
 verificar('quitado no próprio dia já não conta como pendente naquele dia',
-    $semHora['totais']['qtd'] === $depoisDaColuna['totais']['qtd']);
+    $semHora['totais']['qtd'] === $depoisDaColuna['totais']['qtd'],
+    "{$semHora['totais']['qtd']} != {$depoisDaColuna['totais']['qtd']}");
 
 // Sem a coluna, o painel precisa continuar de pé usando só o histórico de lotes.
 $suportaDropColumn = true;
@@ -565,10 +596,127 @@ if ($suportaDropColumn) {
 
 $pdo->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET ' . OXI_COL_DATA_QUITACAO . ' = NULL');
 $pdo->exec('DELETE FROM ' . OXI_TB_BATCH . ' WHERE idBatchControl IN (999001, 999002, 999003)');
+// Sem coluna de data e sem rodada de batch, quem decide é a estimativa pelo
+// orçamento — não mais um "quitado desde sempre".
 $restaurado = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => '2024-08-01', 'somente_pendentes' => 1]));
-verificar('sem rodada registrada, o quitado segue fora dos pendentes',
-    $restaurado['totais']['qtd'] === $depois['totais']['qtd'],
+$coberturaRestaurada = oxigenacao_cobertura_quitacao($pdo, filtros(['data_ref' => '2024-08-01']));
+verificar('sem data registrada, os quitados passam a depender da estimativa',
+    $coberturaRestaurada['quitados_data_exata'] === 0
+    && $coberturaRestaurada['quitados_data_lote'] === 0
+    && $coberturaRestaurada['quitados_estimados'] > 0,
+    "exata={$coberturaRestaurada['quitados_data_exata']} lote={$coberturaRestaurada['quitados_data_lote']} "
+    . "estimados={$coberturaRestaurada['quitados_estimados']}");
+verificar('o total volta ao patamar de antes das rodadas plantadas',
+    $restaurado['totais']['qtd'] >= $depois['totais']['qtd'],
     "restaurado={$restaurado['totais']['qtd']} depois={$depois['totais']['qtd']}");
+
+// ---------------------------------------------------------------------------
+// Status apagados e acumulado de oxigenados
+// ---------------------------------------------------------------------------
+
+echo "\nStatus apagados e acumulado:\n";
+
+$rotuloAntigo = OXI_STATUS_ANTIGOS[25];
+foreach ([25, 26, 27, 28] as $idAntigo) {
+    // O nome vem nulo porque o status não existe mais na tabela.
+    if (oxigenacao_rotulo_status($idAntigo, null) !== $rotuloAntigo) {
+        $rotuloAntigo = false;
+        break;
+    }
+}
+verificar('ids 25 a 28 recebem o mesmo rótulo de status antigo', $rotuloAntigo !== false);
+verificar('id apagado não identificado continua mostrando o número',
+    oxigenacao_rotulo_status(14, null) === 'Status #14');
+verificar('status existente não é afetado pelo mapa de antigos',
+    oxigenacao_rotulo_status(19, 'Pensará na proposta') === 'Pensará na proposta');
+
+$fotoAntigos = oxigenacao_foto_por_data($pdo, filtros(['data_ref' => $dataRef]));
+$linhasAntigas = array_filter($fotoAntigos['linhas'], function ($l) {
+    return $l['Status'] === OXI_STATUS_ANTIGOS[25];
+});
+verificar('os quatro ids antigos aparecem em uma linha só na foto',
+    count($linhasAntigas) <= 1);
+
+$acumulado = oxigenacao_oxigenados_ate($pdo, filtros(['data_ref' => $hoje]));
+$eventosAteHoje = count(array_filter($eventos, function ($e) use ($hoje) {
+    return $e['DataOxigenacao'] <= $hoje;
+}));
+verificar('acumulado de oxigenados bate com os eventos até a data',
+    $acumulado['qtd'] === $eventosAteHoje, "{$acumulado['qtd']} != {$eventosAteHoje}");
+
+$acumuladoAntes = oxigenacao_oxigenados_ate($pdo, filtros(['data_ref' => '2020-03-31']));
+verificar('acumulado cresce com o tempo e nunca supera o total',
+    $acumuladoAntes['qtd'] <= $acumulado['qtd'] && $acumulado['qtd'] === count($eventos));
+
+$acumuladoEnte = oxigenacao_oxigenados_ate($pdo, filtros(['data_ref' => $hoje, 'ente_id' => [$enteAlvo]]));
+verificar('acumulado respeita os filtros comuns',
+    $acumuladoEnte['qtd'] > 0 && $acumuladoEnte['qtd'] < $acumulado['qtd']);
+
+// ---------------------------------------------------------------------------
+// Estimativa de quitação pelo orçamento
+// ---------------------------------------------------------------------------
+
+echo "\nEstimativa de quitação pelo orçamento:\n";
+
+// Casos plantados numa base própria, para exercitar cada braço da regra sem
+// depender do que a amostra por acaso contém.
+$est = new PDO('sqlite::memory:', null, null, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+]);
+$est->exec('CREATE TABLE ' . OXI_TB_PRECATORIO . ' (precatorio_id TEXT, EnteId TEXT, Orcamento TEXT,
+            prec_pg TEXT, batch TEXT, ' . OXI_COL_DATA_QUITACAO . ' TEXT)');
+$est->exec('CREATE TABLE ' . OXI_TB_ENTE . ' (ente_id TEXT, Ente TEXT, Especial TEXT)');
+$est->exec('CREATE TABLE ' . OXI_TB_BATCH . ' (n_batch_quit TEXT, ente_id TEXT, data_batch TEXT)');
+$est->exec('INSERT INTO ' . OXI_TB_ENTE . ' VALUES
+            ("' . OXI_ENTE_ESTADO_RJ . '","Estado do Rio de Janeiro","1"),
+            ("5","Ente especial","1"), ("9","Ente comum","0"), ("7","Ente sem regime",NULL)');
+// Todos quitados hoje, orçamento 2017: RJ -> 2022, especial -> 2021, comum -> 2019.
+$est->exec('INSERT INTO ' . OXI_TB_PRECATORIO . ' VALUES
+            ("1","' . OXI_ENTE_ESTADO_RJ . '","2017","1","0",NULL),
+            ("2","5","2017","1","0",NULL),
+            ("3","9","2017","1","0",NULL),
+            ("4","7","2017","1","0",NULL),
+            ("5","9","NULL","1","0",NULL),
+            ("6","9","2017",NULL,"0",NULL),
+            ("7","9","2017","1","0","2030-01-01")');
+
+function pendentes_em($est, $data) {
+    $filtros = oxigenacao_parse_filtros(['data_ref' => $data, 'somente_pendentes' => 1], 'foto');
+    $params = [];
+    $cond = oxigenacao_condicao_pendente($est, $filtros, $params);
+    $stmt = $est->prepare('SELECT p.precatorio_id AS id FROM ' . OXI_TB_PRECATORIO . ' p '
+        . oxigenacao_join_quitacao() . oxigenacao_join_ente_regime() . " WHERE {$cond}");
+    $stmt->execute($params);
+    return array_column($stmt->fetchAll(), 'id');
+}
+
+verificar('Estado do Rio usa 5 anos (e não os 4 de especial, que ele também é)',
+    in_array('1', pendentes_em($est, '2022-06-30'), true)
+    && !in_array('1', pendentes_em($est, '2023-06-30'), true));
+verificar('ente especial usa 4 anos',
+    in_array('2', pendentes_em($est, '2021-06-30'), true)
+    && !in_array('2', pendentes_em($est, '2022-06-30'), true));
+verificar('ente comum usa 2 anos',
+    in_array('3', pendentes_em($est, '2019-06-30'), true)
+    && !in_array('3', pendentes_em($est, '2021-06-30'), true));
+verificar('ente sem regime não recebe estimativa',
+    !in_array('4', pendentes_em($est, '2018-06-30'), true));
+verificar('orçamento fora da faixa não recebe estimativa',
+    !in_array('5', pendentes_em($est, '2018-06-30'), true));
+verificar('quem nunca foi quitado é pendente em qualquer data',
+    in_array('6', pendentes_em($est, '2018-06-30'), true)
+    && in_array('6', pendentes_em($est, '2030-06-30'), true));
+verificar('data de quitação registrada vence a estimativa',
+    in_array('7', pendentes_em($est, '2023-06-30'), true),
+    'estimativa diria quitado em 2019, mas a coluna diz 2030');
+
+// A rodada de batch tem precedência sobre a estimativa.
+$est->exec('INSERT INTO ' . OXI_TB_BATCH . ' VALUES ("77","9","2028-03-10")');
+$est->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET batch = "77" WHERE precatorio_id = "3"');
+verificar('data da rodada de batch vence a estimativa',
+    in_array('3', pendentes_em($est, '2023-06-30'), true),
+    'estimativa diria quitado em 2019, mas o lote diz 2028');
 
 // ---------------------------------------------------------------------------
 // Opções dos filtros (usadas na montagem da página)

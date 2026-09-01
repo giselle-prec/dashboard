@@ -55,6 +55,27 @@ defined('OXI_TB_ENTE')       || define('OXI_TB_ENTE',       'precappapp.Ente');
 // Perfil de consultor na tabela de usuários.
 const OXI_PERFIL_CONSULTOR = 2;
 
+// Quando não há data de quitação registrada em fonte nenhuma, o ano de
+// pagamento é estimado a partir do orçamento. O Estado do Rio é testado antes
+// do regime especial porque ele também é especial, e tem prazo próprio.
+defined('OXI_ENTE_ESTADO_RJ') || define('OXI_ENTE_ESTADO_RJ', 1);
+const OXI_PRAZO_ANOS_RJ       = 5;
+const OXI_PRAZO_ANOS_ESPECIAL = 4;
+const OXI_PRAZO_ANOS_COMUM    = 2;
+
+// Faixa aceita para o orçamento. A coluna é varchar e tem lixo gravado
+// ("NULL", "24"): fora da faixa, não há estimativa.
+const OXI_ORCAMENTO_MIN = 1990;
+const OXI_ORCAMENTO_MAX = 2100;
+
+// Status apagados da tabela que ainda aparecem em registros antigos de contato.
+const OXI_STATUS_ANTIGOS = [
+    25 => 'Credor não Estava/Ocupado (Status Antigo)',
+    26 => 'Credor não Estava/Ocupado (Status Antigo)',
+    27 => 'Credor não Estava/Ocupado (Status Antigo)',
+    28 => 'Credor não Estava/Ocupado (Status Antigo)',
+];
+
 // Coluna com a data em que o tribunal quitou o precatório. Ainda não existe em
 // todas as bases: quando estiver ausente, a reconstrução cai para o histórico
 // de lotes sozinho. Trocar aqui se a coluna receber outro nome.
@@ -238,6 +259,9 @@ function oxigenacao_where_precatorio(array $filtros, array &$params, $alias = 'p
 }
 
 // Status removidos da tabela ainda aparecem em registros antigos de contato.
+// Os já identificados recebem o nome de volta (e, por caírem no mesmo rótulo,
+// viram uma linha só na consolidação); o resto fica com o id à mostra, até
+// alguém dizer a que correspondia.
 function oxigenacao_rotulo_status($status_id, $nome) {
     if ($nome !== null && $nome !== '') {
         return $nome;
@@ -245,12 +269,37 @@ function oxigenacao_rotulo_status($status_id, $nome) {
     if ($status_id === null || $status_id === '') {
         return OXI_ROTULO_SEM_TENTATIVA;
     }
+    if (isset(OXI_STATUS_ANTIGOS[(int)$status_id])) {
+        return OXI_STATUS_ANTIGOS[(int)$status_id];
+    }
     return 'Status #' . $status_id;
 }
 
 // ---------------------------------------------------------------------------
 // Aba 1 — oxigenação por período
 // ---------------------------------------------------------------------------
+
+// Primeira oxigenação de cada precatório: o contato mais antigo cujo resultado
+// saiu da família "Sem Tentativa". A subquery interna acha a data; a externa
+// desempata datas iguais pelo menor historicoContato_id. Os placeholders da
+// família aparecem duas vezes, e nessa ordem, para quem monta os parâmetros.
+function oxigenacao_sql_primeira_oxigenacao($ph) {
+    $historico = OXI_TB_HISTORICO;
+    return "
+        SELECT h2.PrecatorioId AS PrecatorioId, MIN(h2.historicoContato_id) AS OxiId
+        FROM {$historico} h2
+        JOIN (
+            SELECT h.PrecatorioId AS PrecatorioId, MIN(h.DataContato) AS DataOxi
+            FROM {$historico} h
+            WHERE h.ResultContatoId IS NOT NULL
+              AND h.ResultContatoId NOT IN ({$ph})
+            GROUP BY h.PrecatorioId
+        ) pri ON pri.PrecatorioId = h2.PrecatorioId AND h2.DataContato = pri.DataOxi
+        WHERE h2.ResultContatoId IS NOT NULL
+          AND h2.ResultContatoId NOT IN ({$ph})
+        GROUP BY h2.PrecatorioId
+    ";
+}
 
 // Uma linha por precatório oxigenado dentro do período, já com os dados do
 // precatório e do contato que o oxigenou.
@@ -262,8 +311,6 @@ function oxigenacao_eventos(PDO $pdo, array $filtros) {
     $detalhe   = OXI_TB_DETALHE;
     $status    = OXI_TB_STATUS;
 
-    // A subquery interna acha a data do primeiro contato "oxigenante"; a externa
-    // desempata datas iguais pelo menor historicoContato_id.
     $sql = "
         SELECT
             DATE(ho.DataContato) AS DataOxigenacao,
@@ -282,20 +329,7 @@ function oxigenacao_eventos(PDO $pdo, array $filtros) {
             p.Datarecebimento,
             p.StatusPrec,
             p.prec_pg
-        FROM (
-            SELECT h2.PrecatorioId AS PrecatorioId, MIN(h2.historicoContato_id) AS OxiId
-            FROM {$historico} h2
-            JOIN (
-                SELECT h.PrecatorioId AS PrecatorioId, MIN(h.DataContato) AS DataOxi
-                FROM {$historico} h
-                WHERE h.ResultContatoId IS NOT NULL
-                  AND h.ResultContatoId NOT IN ({$ph})
-                GROUP BY h.PrecatorioId
-            ) pri ON pri.PrecatorioId = h2.PrecatorioId AND h2.DataContato = pri.DataOxi
-            WHERE h2.ResultContatoId IS NOT NULL
-              AND h2.ResultContatoId NOT IN ({$ph})
-            GROUP BY h2.PrecatorioId
-        ) oxi
+        FROM (" . oxigenacao_sql_primeira_oxigenacao($ph) . ") oxi
         JOIN {$historico} ho ON ho.historicoContato_id = oxi.OxiId
         JOIN {$detalhe} p    ON p.precatorio_id = oxi.PrecatorioId
         LEFT JOIN {$status} s ON s.statusPrecatorio_id = ho.ResultContatoId
@@ -470,10 +504,35 @@ function oxigenacao_join_quitacao($alias = 'p', $aliasQuit = 'q') {
             AND {$aliasQuit}.EnteId = {$alias}.EnteId ";
 }
 
-// A data de quitação só interessa quando o recorte de pendentes está ligado;
-// fora disso o JOIN é peso morto.
-function oxigenacao_join_quitacao_se_preciso(array $filtros, $alias = 'p', $aliasQuit = 'q') {
-    return empty($filtros['somente_pendentes']) ? '' : oxigenacao_join_quitacao($alias, $aliasQuit);
+// O regime do ente (Especial) entra pela tabela Ente, que é pequena e casa por
+// chave primária. Precatorio.Regime não serve: vale 1 em toda a base.
+function oxigenacao_join_ente_regime($alias = 'p', $aliasEnte = 'ent') {
+    return ' LEFT JOIN ' . OXI_TB_ENTE . " {$aliasEnte} ON {$aliasEnte}.ente_id = {$alias}.EnteId ";
+}
+
+// Os dois JOINs só interessam quando o recorte de pendentes está ligado; fora
+// disso são peso morto.
+function oxigenacao_join_quitacao_se_preciso(array $filtros, $alias = 'p', $aliasQuit = 'q', $aliasEnte = 'ent') {
+    if (empty($filtros['somente_pendentes'])) {
+        return '';
+    }
+    return oxigenacao_join_quitacao($alias, $aliasQuit) . oxigenacao_join_ente_regime($alias, $aliasEnte);
+}
+
+// Ano estimado do pagamento: orçamento + prazo do regime do ente. Devolve NULL
+// quando não dá para estimar (orçamento fora da faixa ou regime desconhecido),
+// e aí a comparação também é nula e o precatório não conta como pendente por
+// estimativa — cai no balde "sem data", que a tela reporta.
+function oxigenacao_sql_ano_quitacao_estimado($alias = 'p', $aliasEnte = 'ent') {
+    $orcamento = "CAST({$alias}.Orcamento AS SIGNED)";
+    $rj = OXI_ENTE_ESTADO_RJ;
+
+    return "(CASE
+               WHEN {$orcamento} < " . OXI_ORCAMENTO_MIN . " OR {$orcamento} > " . OXI_ORCAMENTO_MAX . " THEN NULL
+               WHEN {$alias}.EnteId = {$rj}      THEN {$orcamento} + " . OXI_PRAZO_ANOS_RJ . "
+               WHEN {$aliasEnte}.Especial = 1    THEN {$orcamento} + " . OXI_PRAZO_ANOS_ESPECIAL . "
+               WHEN {$aliasEnte}.Especial = 0    THEN {$orcamento} + " . OXI_PRAZO_ANOS_COMUM . "
+             END)";
 }
 
 // A coluna de data de quitação está sendo criada aos poucos: o painel funciona
@@ -489,28 +548,52 @@ function oxigenacao_coluna_quitacao_existe(PDO $pdo) {
     }
 }
 
+// Expressão "este precatório tem data de quitação exata gravada". Sem a coluna
+// no banco, ninguém tem.
+function oxigenacao_sql_tem_data_exata(PDO $pdo, $alias = 'p') {
+    if (!oxigenacao_coluna_quitacao_existe($pdo)) {
+        return '(1 = 0)';
+    }
+    $col = OXI_COL_DATA_QUITACAO;
+    return "({$alias}.{$col} IS NOT NULL AND {$alias}.{$col} <> '')";
+}
+
 // Ponto único de decisão do que é "pendente de pagamento" na data escolhida:
 // nunca quitado, ou quitado depois dela. As fontes de data são consultadas na
-// ordem descrita no topo do arquivo. Precatório quitado sem data em nenhuma
-// fonte fica de fora — a contagem desses casos vai para
-// oxigenacao_cobertura_quitacao(), para a tela mostrar o tamanho da incerteza.
+// ordem descrita no topo do arquivo — data exata, data da rodada de batch e,
+// por último, o ano estimado pelo orçamento. Quitado sem nenhuma das três fica
+// de fora; a contagem desses casos vai para oxigenacao_cobertura_quitacao(),
+// para a tela mostrar o tamanho da incerteza.
 //
-// A comparação usa o dia seguinte para dar o mesmo resultado quer a data esteja
-// gravada como data pura, quer com hora junto.
-function oxigenacao_condicao_pendente(PDO $pdo, array $filtros, array &$params, $alias = 'p', $aliasQuit = 'q') {
+// A comparação de data usa o dia seguinte para dar o mesmo resultado quer a
+// data esteja gravada como data pura, quer com hora junto. A estimativa compara
+// anos: pagamento previsto para o ano da data escolhida ainda conta como
+// pendente naquele dia.
+function oxigenacao_condicao_pendente(PDO $pdo, array $filtros, array &$params,
+                                      $alias = 'p', $aliasQuit = 'q', $aliasEnte = 'ent') {
     $limite = oxigenacao_dia_seguinte($filtros['data_ref']);
+    $ano = (int)substr($filtros['data_ref'], 0, 4);
     $col = OXI_COL_DATA_QUITACAO;
+    $temExata = oxigenacao_sql_tem_data_exata($pdo, $alias);
 
-    if (!oxigenacao_coluna_quitacao_existe($pdo)) {
+    $partes = ["{$alias}.prec_pg IS NULL"];
+
+    if (oxigenacao_coluna_quitacao_existe($pdo)) {
         $params[] = $limite;
-        return "({$alias}.prec_pg IS NULL OR {$aliasQuit}.DataRodadaQuitacao >= ?)";
+        $partes[] = "({$temExata} AND {$alias}.{$col} >= ?)";
     }
 
     $params[] = $limite;
-    $params[] = $limite;
-    return "({$alias}.prec_pg IS NULL
-             OR ({$alias}.{$col} IS NOT NULL AND {$alias}.{$col} <> '' AND {$alias}.{$col} >= ?)
-             OR (({$alias}.{$col} IS NULL OR {$alias}.{$col} = '') AND {$aliasQuit}.DataRodadaQuitacao >= ?))";
+    $partes[] = "(NOT {$temExata} AND {$aliasQuit}.DataRodadaQuitacao >= ?)";
+
+    // O ano entra como literal, e não como parâmetro: ligado por placeholder ele
+    // chega como texto e a comparação com o inteiro da estimativa falha em
+    // bancos que não convertem sozinhos. É seguro porque vem de uma data já
+    // validada e passa por (int).
+    $partes[] = "(NOT {$temExata} AND {$aliasQuit}.DataRodadaQuitacao IS NULL
+                  AND " . oxigenacao_sql_ano_quitacao_estimado($alias, $aliasEnte) . " >= {$ano})";
+
+    return '(' . implode("\n             OR ", $partes) . ')';
 }
 
 function oxigenacao_filtro_pendente_pagamento(PDO $pdo, array $filtros, array &$params, $alias = 'p', $aliasQuit = 'q') {
@@ -546,7 +629,9 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
     ")->fetch();
 
     // Sem a coluna, nenhum precatório entra no balde "data exata".
-    $temDataExata = $temColuna ? "(p.{$col} IS NOT NULL AND p.{$col} <> '')" : '(1 = 0)';
+    $temDataExata = oxigenacao_sql_tem_data_exata($pdo);
+    $anoEstimado = oxigenacao_sql_ano_quitacao_estimado();
+    $semRegistro = "p.prec_pg IS NOT NULL AND NOT {$temDataExata} AND q.DataRodadaQuitacao IS NULL";
 
     $sql = '
         SELECT ' . OXI_HINT_TIMEOUT . "
@@ -554,10 +639,10 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
             SUM(CASE WHEN p.prec_pg IS NOT NULL AND {$temDataExata} THEN 1 ELSE 0 END) AS ComDataExata,
             SUM(CASE WHEN p.prec_pg IS NOT NULL AND NOT {$temDataExata}
                           AND q.DataRodadaQuitacao IS NOT NULL THEN 1 ELSE 0 END) AS ComDataLote,
-            SUM(CASE WHEN p.prec_pg IS NOT NULL AND NOT {$temDataExata}
-                          AND q.DataRodadaQuitacao IS NULL THEN 1 ELSE 0 END) AS SemData
+            SUM(CASE WHEN {$semRegistro} AND {$anoEstimado} IS NOT NULL THEN 1 ELSE 0 END) AS Estimados,
+            SUM(CASE WHEN {$semRegistro} AND {$anoEstimado} IS NULL THEN 1 ELSE 0 END) AS SemData
         FROM {$precatorio} p
-    " . oxigenacao_join_quitacao() . '
+    " . oxigenacao_join_quitacao() . oxigenacao_join_ente_regime() . '
         WHERE 1 = 1
     ';
     $params = [];
@@ -574,7 +659,13 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
         'pendentes_hoje'    => (int)($linha['PendentesHoje'] ?? 0),
         'quitados_data_exata' => (int)($linha['ComDataExata'] ?? 0),
         'quitados_data_lote'  => (int)($linha['ComDataLote'] ?? 0),
+        'quitados_estimados'  => (int)($linha['Estimados'] ?? 0),
         'quitados_sem_data'   => (int)($linha['SemData'] ?? 0),
+        'prazos'              => [
+            'rj'       => OXI_PRAZO_ANOS_RJ,
+            'especial' => OXI_PRAZO_ANOS_ESPECIAL,
+            'comum'    => OXI_PRAZO_ANOS_COMUM,
+        ],
     ];
 }
 
@@ -697,6 +788,39 @@ function oxigenacao_foto_reconstruida(PDO $pdo, array $filtros) {
     }
 
     return $linhas;
+}
+
+// Quantos precatórios já tinham saído de "Sem Tentativa" alguma vez até a data.
+// É uma medida acumulada, diferente dos cards de status, que são uma foto: um
+// precatório que voltou para Sem Tentativa, ou que já foi quitado, continua
+// contando aqui. Não depende do status atual nem do recorte de pendentes.
+function oxigenacao_oxigenados_ate(PDO $pdo, array $filtros) {
+    $semTentativa = oxigenacao_status_sem_tentativa($pdo);
+    $ph = oxigenacao_placeholders($semTentativa);
+    $historico  = OXI_TB_HISTORICO;
+    $precatorio = OXI_TB_PRECATORIO;
+
+    $params = array_merge($semTentativa, $semTentativa, [oxigenacao_dia_seguinte($filtros['data_ref'])]);
+
+    $sql = '
+        SELECT ' . OXI_HINT_TIMEOUT . "
+            COUNT(*) AS Qtd,
+            COALESCE(SUM(CAST(p.ValorPrec AS DECIMAL(15,2))), 0) AS Valor
+        FROM (" . oxigenacao_sql_primeira_oxigenacao($ph) . ") oxi
+        JOIN {$historico} ho ON ho.historicoContato_id = oxi.OxiId
+        JOIN {$precatorio} p ON p.precatorio_id = oxi.PrecatorioId
+        WHERE ho.DataContato < ?
+    ";
+    $sql .= oxigenacao_where_precatorio($filtros, $params);
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $linha = $stmt->fetch();
+
+    return [
+        'qtd'   => (int)($linha['Qtd'] ?? 0),
+        'valor' => (float)($linha['Valor'] ?? 0),
+    ];
 }
 
 // Quebra por ente e por consultor de cada status da foto, para o detalhamento

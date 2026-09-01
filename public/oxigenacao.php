@@ -280,7 +280,7 @@
             <div id="aviso-cobertura" class="alert alert-info d-none" role="alert"></div>
 
             <div class="row g-3 mb-4">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card text-bg-secondary h-100">
                         <div class="card-body">
                             <h6 class="card-title">Total na data</h6>
@@ -289,7 +289,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card text-bg-light h-100">
                         <div class="card-body">
                             <h6 class="card-title">Sem Tentativa <small class="text-muted">(aproximado)</small></h6>
@@ -298,12 +298,22 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card text-bg-info h-100">
                         <div class="card-body">
                             <h6 class="card-title">Demais status</h6>
                             <p class="card-text fs-5 mb-0" id="foto-outros-qtd">-</p>
                             <p class="card-text" id="foto-outros-valor">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-bg-success h-100">
+                        <div class="card-body">
+                            <h6 class="card-title">Oxigenados até a data</h6>
+                            <p class="card-text fs-5 mb-0" id="foto-acumulado-qtd">-</p>
+                            <p class="card-text" id="foto-acumulado-valor">-</p>
+                            <p class="card-text small mb-0">Acumulado, não é foto</p>
                         </div>
                     </div>
                 </div>
@@ -344,11 +354,15 @@
             <li>Mudanças feitas fora do fluxo de contato (ex.: <em>Pago pelo ente</em>, <em>Pausado</em>, alterações em
                 lote) não estão no histórico e não são reconstruídas.</li>
             <li>&quot;Pendentes de pagamento na data&quot; parte do <code>prec_pg</code> e busca a data da quitação em
-                três fontes, nesta ordem: a coluna <code>Precatorio.DataQuitacaoBatch</code>; a data da rodada de batch que
-                quitou o precatório (<code>Precatorio.batch</code> = <code>BatchControl.n_batch_quit</code> do mesmo
-                ente); e, se nenhuma das duas tiver a data, o precatório entra como já quitado em qualquer data. O
-                aviso acima do gráfico mostra quantos estão em cada situação e o quanto o número reconstruído difere
-                dos pendentes de hoje.</li>
+                quatro fontes, nesta ordem: a coluna <code>Precatorio.DataQuitacaoBatch</code>; a data da rodada de
+                batch que quitou o precatório (<code>Precatorio.batch</code> = <code>BatchControl.n_batch_quit</code>
+                do mesmo ente); o ano estimado pelo orçamento (regime comum + 2 anos, especial + 4, Estado do Rio
+                + 5); e, se nada disso servir, o precatório entra como já quitado em qualquer data. O aviso acima do
+                gráfico mostra quantos estão em cada situação.</li>
+            <li>Os cards de status são uma <strong>foto</strong>: valem para aquele dia. O card
+                &quot;oxigenados até a data&quot; é <strong>acumulado</strong>: conta quem saiu de Sem Tentativa alguma
+                vez até ali, mesmo que depois tenha voltado ou sido quitado. Os dois números não batem entre si de
+                propósito.</li>
             <li>A foto por data e a base &quot;Sem Tentativa&quot; consultam a tabela <code>Precatorio</code> direto, e
                 não a view <code>precatoriodetalhe</code>. Por isso contam também os precatórios que a view descarta
                 por falta de cadastro relacionado (credor, advogado, réu, tabela de cálculo).</li>

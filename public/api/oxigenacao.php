@@ -24,6 +24,7 @@ try {
             'status_mapa'      => oxigenacao_mapa_status($pdo),
             'por_status_ente'      => $cruzamentos['por_status_ente'],
             'por_status_consultor' => $cruzamentos['por_status_consultor'],
+            'oxigenados_ate'       => oxigenacao_oxigenados_ate($pdo, $filtros),
             'cobertura'        => $filtros['somente_pendentes']
                 ? oxigenacao_cobertura_quitacao($pdo, $filtros)
                 : null,
