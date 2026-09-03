@@ -211,6 +211,9 @@
 
             <div class="row g-3 mb-4">
                 <div class="col-12">
+                    <div class="d-flex justify-content-end">
+                        <span id="legenda-media" class="small text-muted"></span>
+                    </div>
                     <div id="chart-tempo" style="height: 350px;"></div>
                 </div>
                 <div class="col-md-6">

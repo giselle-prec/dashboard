@@ -10,6 +10,9 @@
     // e não vale preencher os períodos vazios.
     var MAX_BALDES = 400;
 
+    // Mesma cor na linha desenhada pelo AnyChart e no traço da legenda em HTML.
+    var COR_MEDIA = '#d63384';
+
     // Última resposta de cada aba, para trocar métrica/agrupamento sem nova requisição.
     var ultimoPeriodo = null;
     var ultimaFoto = null;
@@ -115,6 +118,21 @@
             return segundaFeiraDa(dataIso);
         }
         return dataIso;
+    }
+
+    // Legenda da linha da média, com um traço pontilhado igual ao do gráfico.
+    // Fica fora do canvas do AnyChart para não disputar espaço com as barras.
+    function legendaDaMedia(texto) {
+        var alvo = $('#legenda-media');
+        if (!texto) {
+            alvo.empty();
+            return;
+        }
+        alvo.html(
+            '<span style="display:inline-block;width:32px;border-top:2px dashed ' + COR_MEDIA +
+            ';vertical-align:middle;margin-right:6px;"></span>' +
+            $('<span>').text(texto).html()
+        );
     }
 
     function rotuloGranularidade(granularidade) {
@@ -245,16 +263,17 @@
             chart.lineMarker()
                 .value(media)
                 .axis(chart.yAxis())
-                .stroke({ color: '#d63384', dash: '5 3', thickness: 2 });
+                .stroke({ color: COR_MEDIA, dash: '5 3', thickness: 2 })
+                // As séries ficam por volta de 30; sem isso a linha passa por
+                // baixo das barras e some nas colunas altas.
+                .zIndex(100);
 
-            chart.textMarker()
-                .value(media)
-                .axis(chart.yAxis())
-                .text('Média por ' + rotuloGranularidade(granularidade) + ': ' + formatarMetrica(media, metrica))
-                .align('right')
-                .anchor('right-bottom')
-                .offsetY(-4)
-                .fontColor('#d63384');
+            // O rótulo sai de cima da linha e vira legenda no canto, em HTML:
+            // encostado na linha ele se confundia com as barras.
+            legendaDaMedia('Média por ' + rotuloGranularidade(granularidade) + ': '
+                + formatarMetrica(media, metrica));
+        } else {
+            legendaDaMedia(null);
         }
 
         desenhar('chart-tempo', chart);
@@ -297,6 +316,15 @@
             .position('right')
             .itemsLayout('vertical')
             .align('center');
+
+        // O padrão do AnyChart para pizza é seleção múltipla: clicar num segundo
+        // status deixava os dois destacados enquanto os gráficos de baixo
+        // mostravam só um deles. O teste evita quebrar o gráfico inteiro caso a
+        // versão do AnyChart servida pelo CDN não tenha o método.
+        if (typeof chart.selectionMode === 'function') {
+            chart.selectionMode('singleSelect');
+        }
+
         chart.listen('pointClick', function (e) {
             var status = null;
             if (e.point && typeof e.point.get === 'function') {
@@ -412,8 +440,10 @@
             'Status de destino da oxigenação — ' + rotuloMetrica(metrica),
             metrica,
             function (status) {
-                // Clicar de novo no mesmo status desfaz a seleção.
-                statusSelecionado = (statusSelecionado === status) ? null : status;
+                // Sempre passa a valer o último status clicado. Alternar para
+                // nulo no segundo clique fazia o destaque da pizza e os
+                // gráficos de baixo apontarem para status diferentes.
+                statusSelecionado = status;
                 graficosDoStatus(metricaPeriodo());
             }
         );
@@ -656,7 +686,7 @@
             'Status em ' + formatarData(ultimaFoto.data_ref) + ', exceto Sem Tentativa — ' + rotuloMetrica(metrica),
             metrica,
             function (status) {
-                statusFotoSelecionado = (statusFotoSelecionado === status) ? null : status;
+                statusFotoSelecionado = status;
                 graficosDaFoto(metrica);
             }
         );
