@@ -1,2 +1,4 @@
 config.ini
 config_local.ini
+# Bibliotecas baixadas por tests/browser/preparar_libs.sh
+tests/browser/libs/

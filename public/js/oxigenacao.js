@@ -317,6 +317,20 @@
             .itemsLayout('vertical')
             .align('center');
 
+        // A pizza do AnyChart acumula seleção e não tem modo de seleção única,
+        // então o destaque anterior é desfeito na mão. Sem isso ficavam vários
+        // status destacados e os gráficos de baixo mostravam apenas um deles.
+        function escolher(indice, status) {
+            if (!status) {
+                return;
+            }
+            chart.unselect();
+            if (indice !== null && indice !== undefined) {
+                chart.select(indice);
+            }
+            aoClicar(status);
+        }
+
         chart.listen('pointClick', function (e) {
             var indice = (e.pointIndex !== undefined && e.pointIndex !== null)
                 ? e.pointIndex
@@ -328,20 +342,18 @@
             } else if (e.iterator && typeof e.iterator.get === 'function') {
                 status = e.iterator.get('x');
             }
-            if (!status) {
-                return;
-            }
+            escolher(indice, status);
+        });
 
-            // A pizza do AnyChart acumula seleção e não tem modo de seleção
-            // única, então o destaque anterior é desfeito na mão. Sem isso
-            // ficavam dois status destacados e os gráficos de baixo mostravam
-            // apenas um deles.
-            chart.unselect();
-            if (indice !== null) {
-                chart.select(indice);
-            }
-
-            aoClicar(status);
+        // Clicar na legenda já destacava a fatia por conta do AnyChart, mas sem
+        // avisar o resto da tela: os gráficos de baixo continuavam no status
+        // anterior. preventDefault desliga esse comportamento embutido para a
+        // seleção passar pelo mesmo caminho do clique na fatia.
+        chart.listen('legendItemClick', function (e) {
+            e.preventDefault();
+            var indice = e.itemIndex;
+            var ponto = (indice !== undefined && indice !== null) ? series[indice] : null;
+            escolher(indice, ponto ? ponto.x : null);
         });
 
         desenhar(id, chart);
