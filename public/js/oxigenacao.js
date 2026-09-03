@@ -306,7 +306,7 @@
     // Pizza de status com legenda à direita (ocupa a linha inteira) e clique
     // para escolher o status detalhado nos dois gráficos de baixo. Serve às duas
     // abas: cada uma passa o próprio id de contêiner e o que fazer no clique.
-    function graficoPizzaStatus(id, series, titulo, metrica, aoClicar) {
+    function graficoPizzaStatus(id, series, titulo, metrica, selecionado, aoClicar) {
         var chart = anychart.pie(series);
         chart.title(titulo);
         chart.tooltip().format(function () {
@@ -317,26 +317,48 @@
             .itemsLayout('vertical')
             .align('center');
 
-        // O padrão do AnyChart para pizza é seleção múltipla: clicar num segundo
-        // status deixava os dois destacados enquanto os gráficos de baixo
-        // mostravam só um deles. O teste evita quebrar o gráfico inteiro caso a
-        // versão do AnyChart servida pelo CDN não tenha o método.
-        if (typeof chart.selectionMode === 'function') {
-            chart.selectionMode('singleSelect');
-        }
-
         chart.listen('pointClick', function (e) {
+            var indice = (e.pointIndex !== undefined && e.pointIndex !== null)
+                ? e.pointIndex
+                : (e.iterator && typeof e.iterator.getIndex === 'function' ? e.iterator.getIndex() : null);
+
             var status = null;
             if (e.point && typeof e.point.get === 'function') {
                 status = e.point.get('x');
             } else if (e.iterator && typeof e.iterator.get === 'function') {
                 status = e.iterator.get('x');
             }
-            if (status) {
-                aoClicar(status);
+            if (!status) {
+                return;
             }
+
+            // A pizza do AnyChart acumula seleção e não tem modo de seleção
+            // única, então o destaque anterior é desfeito na mão. Sem isso
+            // ficavam dois status destacados e os gráficos de baixo mostravam
+            // apenas um deles.
+            chart.unselect();
+            if (indice !== null) {
+                chart.select(indice);
+            }
+
+            aoClicar(status);
         });
+
         desenhar(id, chart);
+
+        // Trocar a métrica recria o gráfico: sem isto a fatia escolhida perderia
+        // o destaque enquanto os gráficos de baixo seguiriam mostrando-a.
+        if (selecionado) {
+            var indiceAtual = -1;
+            series.forEach(function (ponto, i) {
+                if (ponto.x === selecionado) {
+                    indiceAtual = i;
+                }
+            });
+            if (indiceAtual >= 0) {
+                chart.select(indiceAtual);
+            }
+        }
     }
 
     // Detalhamento do status escolhido na pizza, em um dos dois recortes.
@@ -439,6 +461,7 @@
             }),
             'Status de destino da oxigenação — ' + rotuloMetrica(metrica),
             metrica,
+            statusSelecionado,
             function (status) {
                 // Sempre passa a valer o último status clicado. Alternar para
                 // nulo no segundo clique fazia o destaque da pizza e os
@@ -685,6 +708,7 @@
             series,
             'Status em ' + formatarData(ultimaFoto.data_ref) + ', exceto Sem Tentativa — ' + rotuloMetrica(metrica),
             metrica,
+            statusFotoSelecionado,
             function (status) {
                 statusFotoSelecionado = status;
                 graficosDaFoto(metrica);
