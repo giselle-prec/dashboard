@@ -636,11 +636,16 @@
         var prazos = cobertura.prazos || {};
 
         var partes = [];
-        var aproximado = estimados > 0 || semData > 0;
+        // Na data de hoje nada é reconstruído: o estado atual da tabela responde
+        // tudo, então não há aproximação a avisar.
+        var aproximado = !cobertura.exata && (estimados > 0 || semData > 0);
 
-        if (ultimaFoto.usa_status_atual) {
-            partes.push('Na data de hoje o status vem da própria tabela de precatórios: é exato e inclui as ' +
-                'mudanças feitas fora do fluxo de contato.');
+        if (cobertura.exata) {
+            aviso.removeClass('d-none alert-warning').addClass('alert-info').text(
+                'Números exatos: na data de hoje o status e a quitação vêm da própria tabela de precatórios, ' +
+                'sem reconstrução. ' + formatarInteiro(pendentesHoje) + ' precatórios pendentes de pagamento.'
+            );
+            return;
         }
 
         if (!aproximado) {

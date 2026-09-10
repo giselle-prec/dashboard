@@ -504,16 +504,24 @@ function oxigenacao_join_quitacao($alias = 'p', $aliasQuit = 'q') {
             AND {$aliasQuit}.EnteId = {$alias}.EnteId ";
 }
 
+// Foto da data de hoje (ou adiante): o estado atual da tabela é a resposta
+// exata, tanto para o status quanto para quem já está quitado. Só datas
+// passadas precisam de reconstrução — e é só nelas que os números são
+// aproximados.
+function oxigenacao_foto_e_de_hoje(array $filtros) {
+    return isset($filtros['data_ref']) && $filtros['data_ref'] >= date('Y-m-d');
+}
+
 // O regime do ente (Especial) entra pela tabela Ente, que é pequena e casa por
 // chave primária. Precatorio.Regime não serve: vale 1 em toda a base.
 function oxigenacao_join_ente_regime($alias = 'p', $aliasEnte = 'ent') {
     return ' LEFT JOIN ' . OXI_TB_ENTE . " {$aliasEnte} ON {$aliasEnte}.ente_id = {$alias}.EnteId ";
 }
 
-// Os dois JOINs só interessam quando o recorte de pendentes está ligado; fora
-// disso são peso morto.
+// Os dois JOINs só interessam quando o recorte de pendentes está ligado e a
+// data exige reconstrução; fora disso são peso morto.
 function oxigenacao_join_quitacao_se_preciso(array $filtros, $alias = 'p', $aliasQuit = 'q', $aliasEnte = 'ent') {
-    if (empty($filtros['somente_pendentes'])) {
+    if (empty($filtros['somente_pendentes']) || oxigenacao_foto_e_de_hoje($filtros)) {
         return '';
     }
     return oxigenacao_join_quitacao($alias, $aliasQuit) . oxigenacao_join_ente_regime($alias, $aliasEnte);
@@ -571,6 +579,14 @@ function oxigenacao_sql_tem_data_exata(PDO $pdo, $alias = 'p') {
 // pendente naquele dia.
 function oxigenacao_condicao_pendente(PDO $pdo, array $filtros, array &$params,
                                       $alias = 'p', $aliasQuit = 'q', $aliasEnte = 'ent') {
+    // Na data de hoje não há nada a reconstruir: prec_pg diz exatamente quem
+    // está quitado agora. Aplicar as outras fontes aqui só faria mal — um
+    // precatório quitado com estimativa de pagamento no ano corrente voltaria
+    // a contar como pendente, inflando a foto.
+    if (oxigenacao_foto_e_de_hoje($filtros)) {
+        return "{$alias}.prec_pg IS NULL";
+    }
+
     $limite = oxigenacao_dia_seguinte($filtros['data_ref']);
     $ano = (int)substr($filtros['data_ref'], 0, 4);
     $col = OXI_COL_DATA_QUITACAO;
@@ -656,6 +672,8 @@ function oxigenacao_cobertura_quitacao(PDO $pdo, array $filtros) {
         'inicio_historico'  => $inicio['Inicio'] ?? null,
         'tem_coluna_data'   => $temColuna,
         'coluna_data'       => $col,
+        // Hoje o número é exato: nenhuma das fontes de reconstrução é usada.
+        'exata'             => oxigenacao_foto_e_de_hoje($filtros),
         'pendentes_hoje'    => (int)($linha['PendentesHoje'] ?? 0),
         'quitados_data_exata' => (int)($linha['ComDataExata'] ?? 0),
         'quitados_data_lote'  => (int)($linha['ComDataLote'] ?? 0),
@@ -835,7 +853,7 @@ function oxigenacao_foto_cruzamentos(PDO $pdo, array $filtros) {
 
     $semTentativa = oxigenacao_status_sem_tentativa($pdo);
     $ph = oxigenacao_placeholders($semTentativa);
-    $usaStatusAtual = $filtros['data_ref'] >= date('Y-m-d');
+    $usaStatusAtual = oxigenacao_foto_e_de_hoje($filtros);
 
     $colunaStatus = $usaStatusAtual ? 'p.StatusId' : 'ult.ResultContatoId';
     $params = [];
@@ -909,7 +927,7 @@ function oxigenacao_foto_cruzamentos(PDO $pdo, array $filtros) {
 
 // Quantidade e valor de precatórios em cada status na data escolhida.
 function oxigenacao_foto_por_data(PDO $pdo, array $filtros) {
-    $usaStatusAtual = $filtros['data_ref'] >= date('Y-m-d');
+    $usaStatusAtual = oxigenacao_foto_e_de_hoje($filtros);
 
     $linhas = $usaStatusAtual
         ? oxigenacao_foto_status_atual($pdo, $filtros)

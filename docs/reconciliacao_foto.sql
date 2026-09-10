@@ -148,6 +148,42 @@ FROM Precatorio p
 WHERE (p.DataCadastra IS NULL OR p.DataCadastra < @limite) AND p.prec_pg IS NULL;
 
 -- ---------------------------------------------------------------------------
+-- 4b. Foto da data de HOJE: aqui não há reconstrução nenhuma. O status vem do
+--     StatusId da tabela e o pendente é exatamente prec_pg IS NULL. As duas
+--     consultas abaixo têm que bater com os cards da tela.
+-- ---------------------------------------------------------------------------
+
+-- "Sem Tentativa" da tela = os status 1 e 65 (os dois se chamam assim).
+-- Valor Baixo (70) e Inserido pelo Robô (71) são filhos da mesma família, mas
+-- aparecem com nome próprio, então não entram nesta conta.
+SELECT 'Sem Tentativa pendentes hoje' AS Linha, COUNT(*) AS Qtd
+FROM Precatorio p
+WHERE p.StatusId IN (1, 65)
+  AND p.prec_pg IS NULL;
+
+-- Mesma conta sem o recorte de pendentes, para comparar com o total do card.
+SELECT 'Sem Tentativa, incluindo quitados' AS Linha, COUNT(*) AS Qtd
+FROM Precatorio p
+WHERE p.StatusId IN (1, 65);
+
+-- Quebra por status, como a tabela da aba mostra na data de hoje.
+SELECT COALESCE(sp.Status, CONCAT('Status #', p.StatusId)) AS Status,
+       COUNT(*) AS Qtd
+FROM Precatorio p
+LEFT JOIN StatusPrecatorio sp ON sp.statusPrecatorio_id = p.StatusId
+WHERE p.prec_pg IS NULL
+GROUP BY 1
+ORDER BY Qtd DESC;
+
+-- Se o número da tela for maior que o daqui, a diferença costuma ser a view:
+-- o painel conta a tabela Precatorio, que inclui precatórios sem cadastro
+-- relacionado (credor, advogado, réu, tabela de cálculo) — esses a view
+-- precatoriodetalhe descarta.
+SELECT 'na tabela Precatorio' AS Linha, COUNT(*) AS Qtd FROM Precatorio
+UNION ALL
+SELECT 'na view precatoriodetalhe', COUNT(*) FROM precatoriodetalhe;
+
+-- ---------------------------------------------------------------------------
 -- 5. Status apagados que ainda aparecem no histórico. Os ids 25 a 28 o painel
 --    já mostra como "Credor não Estava/Ocupado (Status Antigo)"; o que sobrar
 --    aqui aparece na tela como "Status #NN" e ainda precisa ser identificado.

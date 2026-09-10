@@ -711,6 +711,21 @@ verificar('data de quitação registrada vence a estimativa',
     in_array('7', pendentes_em($est, '2023-06-30'), true),
     'estimativa diria quitado em 2019, mas a coluna diz 2030');
 
+// Na data de hoje a estimativa não pode entrar: prec_pg já diz quem está
+// quitado agora. Um quitado com orçamento recente (estimativa no ano corrente
+// ou adiante) reapareceria como pendente e inflaria a foto de hoje.
+$anoAtual = (int)date('Y');
+$est->exec('INSERT INTO ' . OXI_TB_PRECATORIO . ' VALUES
+            ("8","9","' . $anoAtual . '","1","0",NULL)');
+verificar('quitado com estimativa futura não conta como pendente hoje',
+    !in_array('8', pendentes_em($est, date('Y-m-d')), true),
+    'estimativa daria ' . ($anoAtual + OXI_PRAZO_ANOS_COMUM));
+verificar('o mesmo precatório conta como pendente numa data passada',
+    in_array('8', pendentes_em($est, ($anoAtual - 1) . '-06-30'), true));
+verificar('hoje, pendente é exatamente quem tem prec_pg nulo',
+    pendentes_em($est, date('Y-m-d')) === ['6'],
+    implode(', ', pendentes_em($est, date('Y-m-d'))));
+
 // A rodada de batch tem precedência sobre a estimativa.
 $est->exec('INSERT INTO ' . OXI_TB_BATCH . ' VALUES ("77","9","2028-03-10")');
 $est->exec('UPDATE ' . OXI_TB_PRECATORIO . ' SET batch = "77" WHERE precatorio_id = "3"');
