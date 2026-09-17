@@ -7,6 +7,9 @@
 // - Ente, Orçamento e Natureza aceitam múltiplos valores (IN). Orçamento e
 //   Natureza são opcionais: nenhum valor selecionado = sem filtro (todos).
 //   Ente é obrigatório: ao menos um precisa ser selecionado.
+// - Previsão de pagamento (data_max) e Valor mínimo também são opcionais:
+//   em branco = sem essa parte do critério de "melhores negociações" (com
+//   os dois em branco, todo o pipeline entra em "melhores").
 // - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
 // - prec_pg IS NULL AND Active = 1 (pendente de pagamento e ativo no sistema)
 //   é aplicado em TODAS as consultas do painel, inclusive no "Total de
@@ -99,8 +102,13 @@ function prospeccao_sanitize_naturezas($raw) {
     return array_values(array_unique($ids));
 }
 
+// Previsão de pagamento também é opcional: vazio = sem filtro (considera
+// precatórios com qualquer data de recebimento no critério de "melhores").
 function prospeccao_sanitize_data($raw) {
     $raw = trim((string)$raw);
+    if ($raw === '') {
+        return null;
+    }
     $data = DateTime::createFromFormat('Y-m-d', $raw);
     if (!$data || $data->format('Y-m-d') !== $raw) {
         throw new InvalidArgumentException('Data de previsão de pagamento inválida.');
@@ -108,7 +116,11 @@ function prospeccao_sanitize_data($raw) {
     return $raw;
 }
 
+// Valor mínimo também é opcional: vazio = sem filtro (considera qualquer valor).
 function prospeccao_sanitize_valor_min($raw) {
+    if ($raw === null || trim((string)$raw) === '') {
+        return null;
+    }
     if (!is_numeric($raw) || (float)$raw < 0) {
         throw new InvalidArgumentException('Valor mínimo inválido.');
     }
@@ -184,6 +196,28 @@ function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
     }
 
     return implode("\n          AND ", $clausulas);
+}
+
+// Condição do critério de "melhores negociações": valor mínimo e/ou previsão
+// de pagamento, cada um opcional (vazio = sem essa parte do critério). Se os
+// dois estiverem vazios, considera todos os precatórios do pipeline como
+// "melhores" (1=1).
+function prospeccao_condicao_melhores(array $filtros, &$params) {
+    $params = [];
+    $condicoes = [];
+
+    if ($filtros['valor_min'] !== null) {
+        $valor = prospeccao_expressao_valor($filtros);
+        $condicoes[] = "{$valor} >= ?";
+        $params[] = $filtros['valor_min'];
+    }
+
+    if ($filtros['data_max'] !== null) {
+        $condicoes[] = 'precatoriodetalhe.DataRecebimento < ?';
+        $params[] = $filtros['data_max'];
+    }
+
+    return empty($condicoes) ? '1=1' : implode(' AND ', $condicoes);
 }
 
 // Naturezas cadastradas (id + nome), para popular o filtro do formulário.
@@ -300,6 +334,11 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
         $where .= "\n          AND Usuario.PerfilId = 2";
     }
 
+    // Condição de "melhores" (valor mínimo e/ou previsão de pagamento, cada
+    // um opcional) é montada uma vez e reaproveitada nos seis CASE abaixo;
+    // os parâmetros correspondentes também precisam se repetir na mesma ordem.
+    $condMelhores = prospeccao_condicao_melhores($filtros, $paramsMelhoresUnico);
+
     // Ente e StatusId entram no GROUP BY (junto de StatusPrec) para funcionar
     // tanto em servidores com sql_mode=ONLY_FULL_GROUP_BY quanto sem; não
     // altera o resultado, já que StatusId é 1:1 com StatusPrec e Ente é
@@ -315,12 +354,12 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
             SUM(CASE WHEN precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorComRequisitorio,
             SUM(CASE WHEN precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3) THEN 1 ELSE 0 END) AS SemRequisitorio,
             SUM(CASE WHEN precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorSemRequisitorio,
-            SUM(CASE WHEN {$valor} >= ? AND precatoriodetalhe.DataRecebimento < ? THEN 1 ELSE 0 END) AS QtdMelhores,
-            SUM(CASE WHEN {$valor} >= ? AND precatoriodetalhe.DataRecebimento < ? THEN {$valor} ELSE 0 END) AS ValorMelhores,
-            SUM(CASE WHEN {$valor} >= ? AND precatoriodetalhe.DataRecebimento < ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdMelhoresComReq,
-            SUM(CASE WHEN {$valor} >= ? AND precatoriodetalhe.DataRecebimento < ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorMelhoresComReq,
-            SUM(CASE WHEN {$valor} >= ? AND precatoriodetalhe.DataRecebimento < ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
-            SUM(CASE WHEN {$valor} >= ? AND precatoriodetalhe.DataRecebimento < ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN {$valor} ELSE 0 END) AS ValorMelhoresSemReq
+            SUM(CASE WHEN {$condMelhores} THEN 1 ELSE 0 END) AS QtdMelhores,
+            SUM(CASE WHEN {$condMelhores} THEN {$valor} ELSE 0 END) AS ValorMelhores,
+            SUM(CASE WHEN {$condMelhores} AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdMelhoresComReq,
+            SUM(CASE WHEN {$condMelhores} AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorMelhoresComReq,
+            SUM(CASE WHEN {$condMelhores} AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
+            SUM(CASE WHEN {$condMelhores} AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN {$valor} ELSE 0 END) AS ValorMelhoresSemReq
         FROM precappapp.precatoriodetalhe
         {$joinUsuario}
         WHERE {$where}
@@ -328,9 +367,9 @@ function prospeccao_detalhe(PDO $pdo, array $filtros) {
         ORDER BY precatoriodetalhe.StatusPrec DESC{$orderByConsultora}
     ";
 
-    $melhoresPar = [$filtros['valor_min'], $filtros['data_max']];
     $params = array_merge(
-        $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar,
+        $paramsMelhoresUnico, $paramsMelhoresUnico, $paramsMelhoresUnico,
+        $paramsMelhoresUnico, $paramsMelhoresUnico, $paramsMelhoresUnico,
         $whereParams
     );
 

@@ -69,12 +69,18 @@
             </select>
         </div>
         <div class="col-md-3">
-            <label for="data_max" class="form-label">Previsão de Pagamento até</label>
-            <input type="date" class="form-control" id="data_max" name="data_max" value="2030-01-01" required>
+            <label for="data_max" class="form-label">
+                Previsão de Pagamento até
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-limpar-campo" data-target="#data_max">limpar</button>
+            </label>
+            <input type="date" class="form-control" id="data_max" name="data_max" value="2030-01-01">
         </div>
         <div class="col-md-2">
-            <label for="valor_min" class="form-label">Valor Mínimo (R$)</label>
-            <input type="number" step="0.01" min="0" class="form-control" id="valor_min" name="valor_min" value="100000" required>
+            <label for="valor_min" class="form-label">
+                Valor Mínimo (R$)
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-limpar-campo" data-target="#valor_min">limpar</button>
+            </label>
+            <input type="number" step="0.01" min="0" class="form-control" id="valor_min" name="valor_min" value="100000">
         </div>
         <div class="col-md-3">
             <label class="form-label d-block">Valor considerado</label>

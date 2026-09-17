@@ -511,6 +511,11 @@
             $($(this).data('target')).val(null).trigger('change');
         });
 
+        // Campo vazio = sem filtro (mostra todos): ver prospeccao_repository.php.
+        $('.btn-limpar-campo').on('click', function () {
+            $($(this).data('target')).val('');
+        });
+
         $('#form-prospeccao').on('submit', function (e) {
             e.preventDefault();
             carregarDados();
