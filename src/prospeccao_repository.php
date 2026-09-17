@@ -66,6 +66,20 @@ function prospeccao_sanitize_ente_ids($raw) {
     return array_values(array_unique($ids));
 }
 
+// Valida um único ano de orçamento (usado por quem já tem o valor individual
+// em mãos, como oxigenacao_repository.php, em vez de uma lista vinda do
+// formulário). Lança InvalidArgumentException quando o valor é inválido.
+function prospeccao_sanitize_orcamento($valor) {
+    if (!ctype_digit((string)$valor)) {
+        throw new InvalidArgumentException('Orçamento inválido.');
+    }
+    $ano = (int)$valor;
+    if ($ano < 2000 || $ano > 2100) {
+        throw new InvalidArgumentException('Orçamento fora do intervalo permitido.');
+    }
+    return $ano;
+}
+
 // Orçamento é opcional: nenhum valor selecionado = sem filtro (todos os orçamentos).
 function prospeccao_sanitize_orcamentos($raw) {
     $valores = prospeccao_normalizar_lista($raw);
@@ -74,14 +88,7 @@ function prospeccao_sanitize_orcamentos($raw) {
         if ($valor === null || $valor === '') {
             continue;
         }
-        if (!ctype_digit((string)$valor)) {
-            throw new InvalidArgumentException('Orçamento inválido.');
-        }
-        $ano = (int)$valor;
-        if ($ano < 2000 || $ano > 2100) {
-            throw new InvalidArgumentException('Orçamento fora do intervalo permitido.');
-        }
-        $anos[] = $ano;
+        $anos[] = prospeccao_sanitize_orcamento($valor);
     }
     return array_values(array_unique($anos));
 }
