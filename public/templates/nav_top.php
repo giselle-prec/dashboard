@@ -21,6 +21,9 @@
                         <a class="nav-link" href="prospeccao.php">Painel de Prospecção</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="oxigenacao.php">Painel de Oxigenação</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#">Link</a>
                     </li>
                 </ul>
