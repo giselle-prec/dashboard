@@ -1,8 +1,11 @@
 <?php
     require __DIR__ . '/../src/connection.php';
     require __DIR__ . '/../src/crud.php';
+    require __DIR__ . '/../src/prospeccao_repository.php';
 
     $read_ente = DBread($pdo, 'Ente', 'ORDER BY Ente');
+    $naturezas = prospeccao_listar_naturezas($pdo);
+    $orcamentos = prospeccao_listar_orcamentos($pdo);
 
     $title = "Painel de Prospecção";
     require __DIR__ . '/templates/head.php';
@@ -12,30 +15,81 @@
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
+<style>
+    /* Com muitos itens selecionados o Select2 (modo "tags") cresce sem
+       limite de altura; trava numa altura fixa com rolagem interna para
+       não empurrar o resto da página para baixo. */
+    .select2-container .select2-selection--multiple {
+        max-height: 140px;
+        overflow-y: auto;
+    }
+</style>
+
 <div class="container-fluid" style="max-width: 1400px;">
     <h2>Painel de Prospecção</h2>
 
     <form id="form-prospeccao" class="row g-3 align-items-end mb-4">
         <div class="col-md-3">
-            <label for="ente_id" class="form-label">Ente</label>
-            <select class="form-select" id="ente_id" name="ente_id" required>
-                <option value="" selected disabled>Selecione um Ente</option>
+            <label for="ente_id" class="form-label">
+                Ente
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#ente_id">selecionar todos</button> ·
+                <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#ente_id">limpar</button>
+            </label>
+            <select class="form-select select2-multi" id="ente_id" name="ente_id[]" multiple required
+                    data-placeholder="Selecione um ou mais Entes">
                 <?php foreach ($read_ente as $ente): ?>
                 <option value="<?php echo htmlspecialchars($ente['ente_id']); ?>"><?php echo htmlspecialchars($ente['Ente']); ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
         <div class="col-md-2">
-            <label for="orcamento" class="form-label">Orçamento</label>
-            <input type="number" class="form-control" id="orcamento" name="orcamento" value="<?php echo date('Y'); ?>" required>
-        </div>
-        <div class="col-md-3">
-            <label for="data_max" class="form-label">Previsão de Pagamento até</label>
-            <input type="date" class="form-control" id="data_max" name="data_max" value="2030-01-01" required>
+            <label for="orcamento" class="form-label">
+                Orçamento
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#orcamento">todos</button> ·
+                <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#orcamento">limpar</button>
+            </label>
+            <select class="form-select select2-multi" id="orcamento" name="orcamento[]" multiple
+                    data-placeholder="Todos">
+                <?php foreach ($orcamentos as $ano): ?>
+                <option value="<?php echo htmlspecialchars($ano); ?>"><?php echo htmlspecialchars($ano); ?></option>
+                <?php endforeach; ?>
+            </select>
         </div>
         <div class="col-md-2">
-            <label for="valor_min" class="form-label">Valor Mínimo (R$)</label>
-            <input type="number" step="0.01" min="0" class="form-control" id="valor_min" name="valor_min" value="100000" required>
+            <label for="natureza_id" class="form-label">
+                Natureza
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-selecionar-todos" data-target="#natureza_id">todas</button> ·
+                <button type="button" class="btn btn-link btn-sm p-0 btn-limpar-selecao" data-target="#natureza_id">limpar</button>
+            </label>
+            <select class="form-select select2-multi" id="natureza_id" name="natureza_id[]" multiple
+                    data-placeholder="Todas">
+                <?php foreach ($naturezas as $natureza): ?>
+                <option value="<?php echo htmlspecialchars($natureza['id']); ?>"><?php echo htmlspecialchars($natureza['nome']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="data_max" class="form-label">
+                Previsão de Pagamento até
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-limpar-campo" data-target="#data_max">limpar</button>
+            </label>
+            <input type="date" class="form-control" id="data_max" name="data_max" value="2030-01-01">
+        </div>
+        <div class="col-md-2">
+            <label for="valor_min" class="form-label">
+                Valor Mínimo (R$)
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 btn-limpar-campo" data-target="#valor_min">limpar</button>
+            </label>
+            <input type="number" step="0.01" min="0" class="form-control" id="valor_min" name="valor_min" value="100000">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label d-block">Valor considerado</label>
+            <div class="btn-group" role="group" aria-label="Campo de valor">
+                <input type="radio" class="btn-check" name="campo_valor" id="campo-valor-prec" value="ValorPrec" checked autocomplete="off">
+                <label class="btn btn-outline-secondary" for="campo-valor-prec">Valor do Precatório</label>
+                <input type="radio" class="btn-check" name="campo_valor" id="campo-valor-tj" value="vlr_atual_tj" autocomplete="off">
+                <label class="btn btn-outline-secondary" for="campo-valor-tj">Valor Atualizado do TJ</label>
+            </div>
         </div>
         <div class="col-md-2 form-check ms-2">
             <input type="checkbox" class="form-check-input" id="por_consultora" name="por_consultora">
@@ -47,6 +101,21 @@
     </form>
 
     <div id="alerta-erro" class="alert alert-danger d-none" role="alert"></div>
+
+    <div id="info-ultimo-batch" class="alert alert-info d-none py-2" role="status"></div>
+
+    <div id="opcoes-consultora" class="mb-3 d-none">
+        <div class="btn-group" role="group" aria-label="Modo de visualização por consultora">
+            <input type="radio" class="btn-check" name="modo_consultora" id="modo-consultora-geral" value="geral" checked autocomplete="off">
+            <label class="btn btn-outline-primary" for="modo-consultora-geral">Visão Geral</label>
+            <input type="radio" class="btn-check" name="modo_consultora" id="modo-consultora-detalhe" value="detalhe" autocomplete="off">
+            <label class="btn btn-outline-primary" for="modo-consultora-detalhe">Detalhe por Consultora</label>
+        </div>
+        <span class="d-inline-block ms-3 d-none" id="select-consultora-wrapper">
+            <label for="select-consultora" class="form-label mb-0 me-1">Consultora:</label>
+            <select class="form-select form-select-sm d-inline-block w-auto" id="select-consultora"></select>
+        </span>
+    </div>
 
     <div class="row g-3 mb-4" id="cards-resumo">
         <div class="col-md-3">
@@ -87,19 +156,190 @@
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
+    <!-- Esta linha some por completo no modo "Detalhe por Consultora" (tem
+         sua própria versão mais abaixo, filtrada para a pessoa selecionada) -->
+    <div class="row g-3 mb-4" id="linha-graficos-geral">
         <div class="col-md-6">
             <div id="chart-resumo" style="height: 350px;"></div>
+            <div id="chart-consultora-empilhado" style="height: 450px;" class="d-none"></div>
         </div>
         <div class="col-md-6">
             <div id="chart-status" style="height: 350px;"></div>
         </div>
     </div>
 
-    <table id="tabela-detalhe" class="table table-striped table-bordered w-100">
-        <thead></thead>
-        <tbody></tbody>
-    </table>
+    <!-- Agrupado por consultora + Visão Geral: tabela-resumo de todas as consultoras -->
+    <div class="row g-3 mb-4 d-none" id="linha-tabela-consultora-geral">
+        <div class="col-12">
+            <table id="tabela-consultora-resumo" class="table table-striped table-bordered w-100">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Agrupado por consultora + Detalhe: os 4 cards e os 2 gráficos de quando
+         não está agrupado, só que filtrados para a consultora selecionada -->
+    <div id="secao-consultora-detalhe" class="d-none">
+        <div class="row g-3 mb-4" id="cards-consultora">
+            <div class="col-md-3">
+                <div class="card text-bg-secondary h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Total de Precatórios</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-total-qtd">-</p>
+                        <p class="card-text" id="card-consultora-total-valor">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-bg-success h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Prospectados</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-prospectados-qtd">-</p>
+                        <p class="card-text" id="card-consultora-prospectados-valor">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-bg-warning h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Pendentes c/ Requisitório</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-pendente-com-qtd">-</p>
+                        <p class="card-text" id="card-consultora-pendente-com-valor">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-bg-danger h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Pendentes s/ Requisitório</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-pendente-sem-qtd">-</p>
+                        <p class="card-text" id="card-consultora-pendente-sem-valor">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div id="chart-consultora-resumo" style="height: 350px;"></div>
+            </div>
+            <div class="col-md-6">
+                <div id="chart-consultora-status" style="height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <h4>Melhores Negociações <small class="text-muted">(com filtro de previsão de pagamento e valor mínimo)</small></h4>
+    <div class="row g-3 mb-4" id="cards-melhores">
+        <div class="col-md-3">
+            <div class="card text-bg-secondary h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Total de Precatórios</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-total-qtd">-</p>
+                    <p class="card-text" id="card-melhores-total-valor">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-success h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Prospectados</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-prospectados-qtd">-</p>
+                    <p class="card-text" id="card-melhores-prospectados-valor">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-warning h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Pendentes c/ Requisitório</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-pendente-com-qtd">-</p>
+                    <p class="card-text" id="card-melhores-pendente-com-valor">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-danger h-100">
+                <div class="card-body">
+                    <h6 class="card-title">Pendentes s/ Requisitório</h6>
+                    <p class="card-text fs-5 mb-0" id="card-melhores-pendente-sem-qtd">-</p>
+                    <p class="card-text" id="card-melhores-pendente-sem-valor">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Esta linha some por completo no modo "Detalhe por Consultora" -->
+    <div class="row g-3 mb-4" id="linha-graficos-melhores">
+        <div class="col-md-6">
+            <div id="chart-melhores-resumo" style="height: 350px;"></div>
+            <div id="chart-consultora-empilhado-melhores" style="height: 450px;" class="d-none"></div>
+        </div>
+        <div class="col-md-6">
+            <div id="chart-melhores-status" style="height: 350px;"></div>
+        </div>
+    </div>
+
+    <!-- Agrupado por consultora + Visão Geral: tabela-resumo de melhores negociações -->
+    <div class="row g-3 mb-4 d-none" id="linha-tabela-consultora-melhores">
+        <div class="col-12">
+            <table id="tabela-consultora-resumo-melhores" class="table table-striped table-bordered w-100">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Agrupado por consultora + Detalhe: cards e gráficos de melhores negociações da consultora selecionada -->
+    <div id="secao-consultora-detalhe-melhores" class="d-none">
+        <div class="row g-3 mb-4" id="cards-consultora-melhores">
+            <div class="col-md-3">
+                <div class="card text-bg-secondary h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Total de Precatórios</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-melhores-total-qtd">-</p>
+                        <p class="card-text" id="card-consultora-melhores-total-valor">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-bg-success h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Prospectados</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-melhores-prospectados-qtd">-</p>
+                        <p class="card-text" id="card-consultora-melhores-prospectados-valor">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-bg-warning h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Pendentes c/ Requisitório</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-melhores-pendente-com-qtd">-</p>
+                        <p class="card-text" id="card-consultora-melhores-pendente-com-valor">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-bg-danger h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">Pendentes s/ Requisitório</h6>
+                        <p class="card-text fs-5 mb-0" id="card-consultora-melhores-pendente-sem-qtd">-</p>
+                        <p class="card-text" id="card-consultora-melhores-pendente-sem-valor">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div id="chart-consultora-melhores-resumo" style="height: 350px;"></div>
+            </div>
+            <div class="col-md-6">
+                <div id="chart-consultora-melhores-status" style="height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- jQuery -->
@@ -108,6 +348,8 @@
 <script src="https://cdn.datatables.net/v/bs5/dt-2.1.8/b-3.1.2/datatables.min.js"></script>
 <!-- AnyChart -->
 <script src="https://cdn.anychart.com/releases/latest/js/anychart-base.min.js"></script>
+<!-- Select2 (multi-select com busca; independente do JS do Bootstrap) -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script src="js/prospeccao.js"></script>
 

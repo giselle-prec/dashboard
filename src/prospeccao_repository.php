@@ -4,32 +4,118 @@
 // Regras de negócio replicadas da query original fornecida:
 // - StatusId 66, 72, 74 e 75 são sempre excluídos do pipeline de prospecção.
 // - RequisitorioId 1 ou 3 (ou nulo) é considerado "sem requisitório".
-// - Orçamento aceita o ano informado OU o ano seguinte quando NaturezaId = 2.
-// - "Pendente de prospecção" = StatusPrec = 'Sem Tentativa'.
+// - Ente, Orçamento e Natureza aceitam múltiplos valores (IN). Orçamento e
+//   Natureza são opcionais: nenhum valor selecionado = sem filtro (todos).
+//   Ente é obrigatório: ao menos um precisa ser selecionado.
+// - Previsão de pagamento (data_max) e Valor mínimo também são opcionais:
+//   em branco = sem essa parte do critério de "melhores negociações" (com
+//   os dois em branco, todo o pipeline entra em "melhores").
+// - "Pendente de prospecção" = StatusId = 65 (Sem Tentativa).
+// - prec_pg IS NULL AND Active = 1 (pendente de pagamento e ativo no sistema)
+//   é aplicado em TODAS as consultas do painel, inclusive no "Total de
+//   Precatórios" — que portanto não é o universo bruto da tabela, e sim o
+//   total de precatórios ativos e pendentes de pagamento do ente/orçamento.
+// - O campo usado para valores (soma e critério de "melhores negociações")
+//   é escolhido pelo usuário entre ValorPrec e vlr_atual_tj (whitelist —
+//   nunca interpolar o nome da coluna sem validar contra essa lista).
 
 const PROSPECCAO_STATUS_EXCLUIDOS = ['66', '72', '74', '75'];
-const PROSPECCAO_STATUS_PENDENTE = 'Sem Tentativa';
+const PROSPECCAO_STATUS_ID_PENDENTE = '65';
+const PROSPECCAO_CAMPOS_VALOR_PERMITIDOS = ['ValorPrec', 'vlr_atual_tj'];
 
-function prospeccao_sanitize_ente_id($raw) {
-    if (!is_numeric($raw) || (int)$raw <= 0) {
-        throw new InvalidArgumentException('Ente inválido.');
-    }
-    return (int)$raw;
+function prospeccao_placeholders($quantidade) {
+    return implode(',', array_fill(0, $quantidade, '?'));
 }
 
-function prospeccao_sanitize_orcamento($raw) {
-    if (!ctype_digit((string)$raw)) {
+// Um <select multiple> com milhares de opções marcadas (ex.: "selecionar
+// todos" os ~5.600 municípios) excede o max_input_vars do PHP se cada valor
+// vier como um campo POST separado (ente_id[]=1&ente_id[]=2&...) — o PHP
+// descarta os excedentes em silêncio. Por isso o front-end manda cada lista
+// como uma única string JSON; aqui aceitamos JSON, array (uso direto/testes)
+// ou valor único, sempre devolvendo uma lista plana.
+function prospeccao_normalizar_lista($raw) {
+    if (is_array($raw)) {
+        return $raw;
+    }
+    if ($raw === null || $raw === '') {
+        return [];
+    }
+    $decodificado = json_decode($raw, true);
+    if (is_array($decodificado)) {
+        return $decodificado;
+    }
+    return [$raw];
+}
+
+// Aceita um valor único, array ou string JSON. Devolve uma lista de inteiros positivos.
+function prospeccao_sanitize_ente_ids($raw) {
+    $valores = prospeccao_normalizar_lista($raw);
+    $ids = [];
+    foreach ($valores as $valor) {
+        if ($valor === null || $valor === '') {
+            continue;
+        }
+        if (!is_numeric($valor) || (int)$valor <= 0) {
+            throw new InvalidArgumentException('Ente inválido.');
+        }
+        $ids[] = (int)$valor;
+    }
+    if (empty($ids)) {
+        throw new InvalidArgumentException('Selecione ao menos um Ente.');
+    }
+    return array_values(array_unique($ids));
+}
+
+// Valida um único ano de orçamento (usado por quem já tem o valor individual
+// em mãos, como oxigenacao_repository.php, em vez de uma lista vinda do
+// formulário). Lança InvalidArgumentException quando o valor é inválido.
+function prospeccao_sanitize_orcamento($valor) {
+    if (!ctype_digit((string)$valor)) {
         throw new InvalidArgumentException('Orçamento inválido.');
     }
-    $ano = (int)$raw;
+    $ano = (int)$valor;
     if ($ano < 2000 || $ano > 2100) {
         throw new InvalidArgumentException('Orçamento fora do intervalo permitido.');
     }
     return $ano;
 }
 
+// Orçamento é opcional: nenhum valor selecionado = sem filtro (todos os orçamentos).
+function prospeccao_sanitize_orcamentos($raw) {
+    $valores = prospeccao_normalizar_lista($raw);
+    $anos = [];
+    foreach ($valores as $valor) {
+        if ($valor === null || $valor === '') {
+            continue;
+        }
+        $anos[] = prospeccao_sanitize_orcamento($valor);
+    }
+    return array_values(array_unique($anos));
+}
+
+// Natureza também é opcional: nenhum valor selecionado = sem filtro (todas as naturezas).
+function prospeccao_sanitize_naturezas($raw) {
+    $valores = prospeccao_normalizar_lista($raw);
+    $ids = [];
+    foreach ($valores as $valor) {
+        if ($valor === null || $valor === '') {
+            continue;
+        }
+        if (!ctype_digit((string)$valor)) {
+            throw new InvalidArgumentException('Natureza inválida.');
+        }
+        $ids[] = (int)$valor;
+    }
+    return array_values(array_unique($ids));
+}
+
+// Previsão de pagamento também é opcional: vazio = sem filtro (considera
+// precatórios com qualquer data de recebimento no critério de "melhores").
 function prospeccao_sanitize_data($raw) {
     $raw = trim((string)$raw);
+    if ($raw === '') {
+        return null;
+    }
     $data = DateTime::createFromFormat('Y-m-d', $raw);
     if (!$data || $data->format('Y-m-d') !== $raw) {
         throw new InvalidArgumentException('Data de previsão de pagamento inválida.');
@@ -37,65 +123,184 @@ function prospeccao_sanitize_data($raw) {
     return $raw;
 }
 
+// Valor mínimo também é opcional: vazio = sem filtro (considera qualquer valor).
 function prospeccao_sanitize_valor_min($raw) {
+    if ($raw === null || trim((string)$raw) === '') {
+        return null;
+    }
     if (!is_numeric($raw) || (float)$raw < 0) {
         throw new InvalidArgumentException('Valor mínimo inválido.');
     }
     return number_format((float)$raw, 2, '.', '');
 }
 
+// Campo usado para soma/critério de valor. Restrito a uma whitelist porque
+// vira literal na query (nome de coluna não pode ser parâmetro do PDO).
+function prospeccao_sanitize_campo_valor($raw) {
+    $campo = ($raw === null || $raw === '') ? 'ValorPrec' : (string)$raw;
+    if (!in_array($campo, PROSPECCAO_CAMPOS_VALOR_PERMITIDOS, true)) {
+        throw new InvalidArgumentException('Campo de valor inválido.');
+    }
+    return $campo;
+}
+
 // Normaliza e valida todos os filtros vindos do formulário/API.
 function prospeccao_parse_filtros(array $input) {
     return [
-        'ente_id'        => prospeccao_sanitize_ente_id($input['ente_id'] ?? null),
-        'orcamento'      => prospeccao_sanitize_orcamento($input['orcamento'] ?? null),
+        'ente_ids'       => prospeccao_sanitize_ente_ids($input['ente_id'] ?? null),
+        'orcamentos'     => prospeccao_sanitize_orcamentos($input['orcamento'] ?? null),
+        'natureza_ids'   => prospeccao_sanitize_naturezas($input['natureza_id'] ?? null),
         'data_max'       => prospeccao_sanitize_data($input['data_max'] ?? null),
         'valor_min'      => prospeccao_sanitize_valor_min($input['valor_min'] ?? null),
+        'campo_valor'    => prospeccao_sanitize_campo_valor($input['campo_valor'] ?? null),
         'por_consultora' => !empty($input['por_consultora']),
     ];
 }
 
-function prospeccao_status_excluidos_placeholders() {
-    return implode(',', array_fill(0, count(PROSPECCAO_STATUS_EXCLUIDOS), '?'));
+// Expressão SQL para o campo de valor escolhido, já com CAST e qualificada
+// com o nome da tabela (mesmo motivo do prospeccao_build_where: fica seguro
+// mesmo quando o JOIN com Usuario entra na consulta).
+function prospeccao_expressao_valor(array $filtros) {
+    return "CAST(precatoriodetalhe.{$filtros['campo_valor']} AS DECIMAL(15,2))";
 }
 
-// Painel geral: total do universo (todos os precatórios do ente/orçamento) +
-// quebra do pipeline de prospecção (prospectados / pendentes com e sem requisitório).
-function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
-    $orcamentoProximo = $filtros['orcamento'] + 1;
+// Monta a cláusula WHERE comum (ente, pipeline de prospecção, orçamento e natureza)
+// e devolve, por referência, os parâmetros na mesma ordem dos "?" gerados.
+// Colunas sempre qualificadas com "precatoriodetalhe." porque
+// prospeccao_detalhe() pode juntar a tabela Usuario (quando agrupado por
+// consultora), que já se mostrou ter colunas de mesmo nome (FirstName,
+// Active) — sem o prefixo, a query fica ambígua assim que o JOIN entra.
+function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
+    $params = [];
+    $clausulas = [
+        'precatoriodetalhe.ente_id IN (' . prospeccao_placeholders(count($filtros['ente_ids'])) . ')',
+        'precatoriodetalhe.prec_pg IS NULL',
+        'precatoriodetalhe.Active = 1',
+    ];
+    foreach ($filtros['ente_ids'] as $enteId) {
+        $params[] = $enteId;
+    }
 
+    if ($incluirPipeline) {
+        $clausulas[] = 'precatoriodetalhe.StatusId NOT IN (' . prospeccao_placeholders(count(PROSPECCAO_STATUS_EXCLUIDOS)) . ')';
+        foreach (PROSPECCAO_STATUS_EXCLUIDOS as $statusId) {
+            $params[] = $statusId;
+        }
+    }
+
+    if (!empty($filtros['orcamentos'])) {
+        $clausulas[] = 'precatoriodetalhe.Orcamento IN (' . prospeccao_placeholders(count($filtros['orcamentos'])) . ')';
+        foreach ($filtros['orcamentos'] as $ano) {
+            $params[] = $ano;
+        }
+    }
+
+    if (!empty($filtros['natureza_ids'])) {
+        $clausulas[] = 'precatoriodetalhe.NaturezaId IN (' . prospeccao_placeholders(count($filtros['natureza_ids'])) . ')';
+        foreach ($filtros['natureza_ids'] as $naturezaId) {
+            $params[] = $naturezaId;
+        }
+    }
+
+    return implode("\n          AND ", $clausulas);
+}
+
+// Condição do critério de "melhores negociações": valor mínimo e/ou previsão
+// de pagamento, cada um opcional (vazio = sem essa parte do critério). Se os
+// dois estiverem vazios, considera todos os precatórios do pipeline como
+// "melhores" (1=1).
+function prospeccao_condicao_melhores(array $filtros, &$params) {
+    $params = [];
+    $condicoes = [];
+
+    if ($filtros['valor_min'] !== null) {
+        $valor = prospeccao_expressao_valor($filtros);
+        $condicoes[] = "{$valor} >= ?";
+        $params[] = $filtros['valor_min'];
+    }
+
+    if ($filtros['data_max'] !== null) {
+        $condicoes[] = 'precatoriodetalhe.DataRecebimento < ?';
+        $params[] = $filtros['data_max'];
+    }
+
+    return empty($condicoes) ? '1=1' : implode(' AND ', $condicoes);
+}
+
+// Naturezas cadastradas (id + nome), para popular o filtro do formulário.
+function prospeccao_listar_naturezas(PDO $pdo) {
+    $stmt = $pdo->query("
+        SELECT natuPrec_id AS id, Natureza AS nome
+        FROM precappapp.NaturezaPrec
+        ORDER BY Natureza
+    ");
+    return $stmt->fetchAll();
+}
+
+// Orçamentos distintos existentes na base, para popular o filtro do formulário.
+function prospeccao_listar_orcamentos(PDO $pdo) {
+    $stmt = $pdo->query("
+        SELECT DISTINCT Orcamento
+        FROM precappapp.precatoriodetalhe
+        WHERE Orcamento IS NOT NULL
+        ORDER BY Orcamento DESC
+    ");
+    return $stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
+// Data/hora do batch mais recente entre os entes selecionados (BatchControl
+// não tem uma coluna de data real — data_batch é texto livre — então usamos
+// o idBatchControl, auto-incremento, para achar o registro mais recente).
+function prospeccao_ultimo_batch(PDO $pdo, array $enteIds) {
+    if (empty($enteIds)) {
+        return null;
+    }
+    $stmt = $pdo->prepare("
+        SELECT BatchControl.data_batch, BatchControl.ente_id, Ente.Ente AS nome_ente
+        FROM precappapp.BatchControl
+        LEFT JOIN precappapp.Ente ON precappapp.Ente.ente_id = BatchControl.ente_id
+        WHERE BatchControl.ente_id IN (" . prospeccao_placeholders(count($enteIds)) . ")
+        ORDER BY BatchControl.idBatchControl DESC
+        LIMIT 1
+    ");
+    $stmt->execute($enteIds);
+    $linha = $stmt->fetch();
+    return $linha ?: null;
+}
+
+// Painel geral: total de precatórios ativos e pendentes de pagamento do
+// ente/orçamento/natureza + quebra do pipeline de prospecção (prospectados /
+// pendentes com e sem requisitório, excluindo os StatusId já encerrados).
+function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
+    $valor = prospeccao_expressao_valor($filtros);
+
+    $whereTotal = prospeccao_build_where($filtros, false, $paramsTotal);
     $sqlTotal = "
         SELECT
-            COUNT(Precatorio) AS QtdTotal,
-            COALESCE(SUM(CAST(ValorPrec AS DECIMAL(15,2))), 0) AS ValorTotal
+            COUNT(precatoriodetalhe.Precatorio) AS QtdTotal,
+            COALESCE(SUM({$valor}), 0) AS ValorTotal
         FROM precappapp.precatoriodetalhe
-        WHERE ente_id = ?
-          AND (Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))
+        WHERE {$whereTotal}
     ";
     $stmt = $pdo->prepare($sqlTotal);
-    $stmt->execute([$filtros['ente_id'], $filtros['orcamento'], $orcamentoProximo]);
+    $stmt->execute($paramsTotal);
     $total = $stmt->fetch();
 
-    $statusPlaceholders = prospeccao_status_excluidos_placeholders();
+    $wherePipeline = prospeccao_build_where($filtros, true, $paramsPipeline);
     $sqlPipeline = "
         SELECT
-            SUM(CASE WHEN StatusPrec <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
-            SUM(CASE WHEN StatusPrec <> ? THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorProspectados,
-            SUM(CASE WHEN StatusPrec = ? AND RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdPendenteComReq,
-            SUM(CASE WHEN StatusPrec = ? AND RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteComReq,
-            SUM(CASE WHEN StatusPrec = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
-            SUM(CASE WHEN StatusPrec = ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorPendenteSemReq
+            SUM(CASE WHEN precatoriodetalhe.StatusId <> ? THEN 1 ELSE 0 END) AS QtdProspectados,
+            SUM(CASE WHEN precatoriodetalhe.StatusId <> ? THEN {$valor} ELSE 0 END) AS ValorProspectados,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdPendenteComReq,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorPendenteComReq,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdPendenteSemReq,
+            SUM(CASE WHEN precatoriodetalhe.StatusId = ? AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN {$valor} ELSE 0 END) AS ValorPendenteSemReq
         FROM precappapp.precatoriodetalhe
-        WHERE ente_id = ?
-          AND StatusId NOT IN ({$statusPlaceholders})
-          AND prec_pg IS NULL
-          AND (Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))
+        WHERE {$wherePipeline}
     ";
     $params = array_merge(
-        [PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE, PROSPECCAO_STATUS_PENDENTE],
-        [$filtros['ente_id']],
-        PROSPECCAO_STATUS_EXCLUIDOS,
-        [$filtros['orcamento'], $orcamentoProximo]
+        array_fill(0, 6, PROSPECCAO_STATUS_ID_PENDENTE),
+        $paramsPipeline
     );
     $stmt = $pdo->prepare($sqlPipeline);
     $stmt->execute($params);
@@ -114,48 +319,65 @@ function prospeccao_resumo_geral(PDO $pdo, array $filtros) {
 }
 
 // Detalhe por StatusPrec (e opcionalmente por consultora/FirstName), equivalente à
-// query original fornecida, com filtros de ente/orçamento/data/valor mínimo.
+// query original fornecida, com filtros de ente/orçamento/natureza/data/valor mínimo.
 function prospeccao_detalhe(PDO $pdo, array $filtros) {
-    $orcamentoProximo = $filtros['orcamento'] + 1;
     $porConsultora = $filtros['por_consultora'];
+    $valor = prospeccao_expressao_valor($filtros);
 
-    $selectConsultora = $porConsultora ? "FirstName,\n            " : '';
-    $groupByConsultora = $porConsultora ? ', FirstName' : '';
-    $orderByConsultora = $porConsultora ? ', FirstName' : '';
-    $statusPlaceholders = prospeccao_status_excluidos_placeholders();
+    // precatoriodetalhe.FirstName é qualificado explicitamente porque Usuario
+    // também tem uma coluna FirstName; sem o prefixo, o "SELECT FirstName"
+    // fica ambíguo assim que o JOIN com Usuario entra na consulta.
+    $selectConsultora = $porConsultora ? "precatoriodetalhe.FirstName,\n            " : '';
+    $groupByConsultora = $porConsultora ? ', precatoriodetalhe.FirstName' : '';
+    $orderByConsultora = $porConsultora ? ', precatoriodetalhe.FirstName' : '';
+    $where = prospeccao_build_where($filtros, true, $whereParams);
 
+    // Consultoras relevantes são as com PerfilId = 2 na tabela Usuario
+    // (precatoriodetalhe.Negociador = Usuario.usuario_id). Só entra quando
+    // agrupado por consultora — não afeta o resumo geral (que não é por pessoa).
+    $joinUsuario = '';
+    if ($porConsultora) {
+        $joinUsuario = 'INNER JOIN precappapp.Usuario ON precatoriodetalhe.Negociador = Usuario.usuario_id';
+        $where .= "\n          AND Usuario.PerfilId = 2";
+    }
+
+    // Condição de "melhores" (valor mínimo e/ou previsão de pagamento, cada
+    // um opcional) é montada uma vez e reaproveitada nos seis CASE abaixo;
+    // os parâmetros correspondentes também precisam se repetir na mesma ordem.
+    $condMelhores = prospeccao_condicao_melhores($filtros, $paramsMelhoresUnico);
+
+    // Ente e StatusId entram no GROUP BY (junto de StatusPrec) para funcionar
+    // tanto em servidores com sql_mode=ONLY_FULL_GROUP_BY quanto sem; não
+    // altera o resultado, já que StatusId é 1:1 com StatusPrec e Ente é
+    // funcionalmente dependente de ente_id (mesmo havendo vários entes no IN).
     $sql = "
         SELECT
-            Ente,
-            StatusPrec,
-            StatusId,
-            {$selectConsultora}COUNT(Precatorio) AS QuantidadeTotal,
-            SUM(CAST(ValorPrec AS DECIMAL(15,2))) AS ValorTotal,
-            SUM(CASE WHEN RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS ComRequisitorio,
-            SUM(CASE WHEN RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorComRequisitorio,
-            SUM(CASE WHEN RequisitorioId IS NULL OR RequisitorioId IN (1, 3) THEN 1 ELSE 0 END) AS SemRequisitorio,
-            SUM(CASE WHEN RequisitorioId IS NULL OR RequisitorioId IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorSemRequisitorio,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? THEN 1 ELSE 0 END) AS QtdMelhores,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhores,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdMelhoresComReq,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND RequisitorioId NOT IN (1, 3) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresComReq,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
-            SUM(CASE WHEN CAST(ValorPrec AS DECIMAL(15,2)) >= ? AND DataRecebimento < ? AND (RequisitorioId IS NULL OR RequisitorioId IN (1, 3)) THEN CAST(ValorPrec AS DECIMAL(15,2)) ELSE 0 END) AS ValorMelhoresSemReq
+            precatoriodetalhe.Ente,
+            precatoriodetalhe.StatusPrec,
+            precatoriodetalhe.StatusId,
+            {$selectConsultora}COUNT(precatoriodetalhe.Precatorio) AS QuantidadeTotal,
+            SUM({$valor}) AS ValorTotal,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS ComRequisitorio,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorComRequisitorio,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3) THEN 1 ELSE 0 END) AS SemRequisitorio,
+            SUM(CASE WHEN precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorSemRequisitorio,
+            SUM(CASE WHEN {$condMelhores} THEN 1 ELSE 0 END) AS QtdMelhores,
+            SUM(CASE WHEN {$condMelhores} THEN {$valor} ELSE 0 END) AS ValorMelhores,
+            SUM(CASE WHEN {$condMelhores} AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN 1 ELSE 0 END) AS QtdMelhoresComReq,
+            SUM(CASE WHEN {$condMelhores} AND precatoriodetalhe.RequisitorioId NOT IN (1, 3) THEN {$valor} ELSE 0 END) AS ValorMelhoresComReq,
+            SUM(CASE WHEN {$condMelhores} AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN 1 ELSE 0 END) AS QtdMelhoresSemReq,
+            SUM(CASE WHEN {$condMelhores} AND (precatoriodetalhe.RequisitorioId IS NULL OR precatoriodetalhe.RequisitorioId IN (1, 3)) THEN {$valor} ELSE 0 END) AS ValorMelhoresSemReq
         FROM precappapp.precatoriodetalhe
-        WHERE ente_id = ?
-          AND StatusId NOT IN ({$statusPlaceholders})
-          AND prec_pg IS NULL
-          AND (Orcamento = ? OR (Orcamento = ? AND NaturezaId = '2'))
-        GROUP BY StatusPrec{$groupByConsultora}
-        ORDER BY StatusPrec DESC{$orderByConsultora}
+        {$joinUsuario}
+        WHERE {$where}
+        GROUP BY precatoriodetalhe.StatusPrec, precatoriodetalhe.StatusId, precatoriodetalhe.Ente{$groupByConsultora}
+        ORDER BY precatoriodetalhe.StatusPrec DESC{$orderByConsultora}
     ";
 
-    $melhoresPar = [$filtros['valor_min'], $filtros['data_max']];
     $params = array_merge(
-        $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar, $melhoresPar,
-        [$filtros['ente_id']],
-        PROSPECCAO_STATUS_EXCLUIDOS,
-        [$filtros['orcamento'], $orcamentoProximo]
+        $paramsMelhoresUnico, $paramsMelhoresUnico, $paramsMelhoresUnico,
+        $paramsMelhoresUnico, $paramsMelhoresUnico, $paramsMelhoresUnico,
+        $whereParams
     );
 
     $stmt = $pdo->prepare($sql);
