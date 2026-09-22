@@ -27,6 +27,10 @@
                         <a class="nav-link" href="#">Link</a>
                     </li>
                 </ul>
+                <?php if (isset($_SESSION['user'])): ?>
+                    <span class="navbar-text me-3"><?php echo htmlspecialchars($_SESSION['user']); ?></span>
+                    <a class="btn btn-outline-secondary btn-sm" href="logout.php">Sair</a>
+                <?php endif; ?>
             </div>
         </div>
     </nav>

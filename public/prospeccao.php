@@ -1,4 +1,6 @@
 <?php
+    $rota = 'prospeccao';
+    require __DIR__ . '/../src/guarda.php';
     require __DIR__ . '/../src/connection.php';
     require __DIR__ . '/../src/crud.php';
     require __DIR__ . '/../src/prospeccao_repository.php';

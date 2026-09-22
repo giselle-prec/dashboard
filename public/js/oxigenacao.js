@@ -53,6 +53,10 @@
     }
 
     function erroDaResposta(xhr) {
+        // Sessão expirada: a API responde 401 e o usuário volta ao login.
+        if (xhr.status === 401) {
+            window.location = 'login.php';
+        }
         if (xhr.responseJSON && xhr.responseJSON.erro) {
             return xhr.responseJSON.erro;
         }

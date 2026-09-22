@@ -2,6 +2,9 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
+require __DIR__ . '/../../src/auth.php';
+auth_exigir_login_api();
+
 require __DIR__ . '/../../src/connection.php';
 require __DIR__ . '/../../src/oxigenacao_repository.php';
 
