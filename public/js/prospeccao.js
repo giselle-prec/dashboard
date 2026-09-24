@@ -483,6 +483,10 @@
                 renderizarModoConsultora();
             })
             .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    window.location = 'login.php';
+                    return;
+                }
                 var mensagem = 'Não foi possível carregar os dados.';
                 if (xhr.responseJSON && xhr.responseJSON.erro) {
                     mensagem = xhr.responseJSON.erro;
