@@ -165,9 +165,19 @@
         return d.getFullYear() + '-' + mes + '-' + dia;
     }
 
+    function ehFimDeSemana(dataIso) {
+        var dia = new Date(dataIso + 'T00:00:00').getDay();
+        return dia === 0 || dia === 6;
+    }
+
     // Todas as chaves entre as duas datas, inclusive as sem nenhuma oxigenação.
     // Sem isso um mês zerado simplesmente sumiria do eixo, e a média sairia
     // dividida só pelos períodos que tiveram movimento.
+    //
+    // A exceção são sábados e domingos no agrupamento por dia: como não há
+    // expediente, eles entrariam sempre zerados, esticando o eixo e puxando a
+    // média para baixo. Ficam de fora do preenchimento — mas um fim de semana
+    // que teve oxigenação continua aparecendo, porque entra pelos dados.
     function chavesDoPeriodo(inicio, fim, granularidade) {
         if (!inicio || !fim || fim < inicio) {
             return [];
@@ -188,9 +198,12 @@
             }
         } else {
             var passo = granularidade === 'semana' ? 7 : 1;
+            var pularFimDeSemana = granularidade === 'dia';
             var atual = chaveTemporal(inicio, granularidade);
             while (atual <= limite && chaves.length <= MAX_BALDES) {
-                chaves.push(atual);
+                if (!pularFimDeSemana || !ehFimDeSemana(atual)) {
+                    chaves.push(atual);
+                }
                 atual = somarDias(atual, passo);
             }
         }

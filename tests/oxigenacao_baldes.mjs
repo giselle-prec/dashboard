@@ -29,7 +29,7 @@ function extrair(nome) {
 }
 
 const codigo = 'var MAX_BALDES = 400;\n'
-    + ['segundaFeiraDa', 'chaveTemporal', 'somarDias', 'chavesDoPeriodo', 'agruparPorDia']
+    + ['segundaFeiraDa', 'chaveTemporal', 'somarDias', 'ehFimDeSemana', 'chavesDoPeriodo', 'agruparPorDia']
         .map(extrair).join('\n')
     + '\nreturn { chavesDoPeriodo, agruparPorDia, chaveTemporal };';
 
@@ -48,10 +48,20 @@ ok('meses atravessam a virada de ano',
     JSON.stringify(meses));
 
 const dias = m.chavesDoPeriodo('2026-02-26', '2026-03-02', 'dia');
-ok('dias atravessam o fim do mês',
-    JSON.stringify(dias) === JSON.stringify(
-        ['2026-02-26', '2026-02-27', '2026-02-28', '2026-03-01', '2026-03-02']),
+ok('dias atravessam o fim do mês, pulando o fim de semana',
+    JSON.stringify(dias) === JSON.stringify(['2026-02-26', '2026-02-27', '2026-03-02']),
     JSON.stringify(dias));
+
+// 2026-03-07 é sábado e 2026-03-08 é domingo.
+const semana = m.chavesDoPeriodo('2026-03-05', '2026-03-10', 'dia');
+ok('sábado e domingo não entram no preenchimento por dia',
+    !semana.includes('2026-03-07') && !semana.includes('2026-03-08')
+    && semana.includes('2026-03-06') && semana.includes('2026-03-09'),
+    JSON.stringify(semana));
+
+const soFimDeSemana = m.chavesDoPeriodo('2026-03-07', '2026-03-08', 'dia');
+ok('intervalo só de fim de semana não gera períodos vazios',
+    soFimDeSemana.length === 0, JSON.stringify(soFimDeSemana));
 
 const semanas = m.chavesDoPeriodo('2026-01-07', '2026-01-25', 'semana');
 ok('semanas começam na segunda-feira',
@@ -84,7 +94,28 @@ ok('média divide pelos 3 meses do intervalo, não pelos 2 com movimento',
 ok('sem intervalo informado, só entram os períodos com dado',
     m.agruparPorDia(porDia, 'mes', null).length === 2);
 
+// Fim de semana: some quando está zerado, aparece quando teve movimento.
+const semanaUtil = m.agruparPorDia(
+    [{ rotulo: '2026-03-06', qtd: 4, valor: 400 }],
+    'dia', { inicio: '2026-03-05', fim: '2026-03-10' });
+ok('semana sem movimento no fim de semana mostra só os dias úteis',
+    semanaUtil.length === 4
+    && !semanaUtil.some((b) => b.chave === '2026-03-07' || b.chave === '2026-03-08'),
+    JSON.stringify(semanaUtil.map((b) => b.chave)));
+
+const comSabado = m.agruparPorDia(
+    [{ rotulo: '2026-03-06', qtd: 4, valor: 400 }, { rotulo: '2026-03-07', qtd: 2, valor: 200 }],
+    'dia', { inicio: '2026-03-05', fim: '2026-03-10' });
+ok('sábado com oxigenação continua aparecendo',
+    comSabado.some((b) => b.chave === '2026-03-07' && b.qtd === 2)
+    && !comSabado.some((b) => b.chave === '2026-03-08'),
+    JSON.stringify(comSabado.map((b) => b.chave + '=' + b.qtd)));
+
+const mediaSemFds = semanaUtil.reduce((soma, b) => soma + b.qtd, 0) / semanaUtil.length;
+ok('média por dia divide pelos dias úteis, não pela semana inteira',
+    mediaSemFds === 1, 'media=' + mediaSemFds);
+
 console.log(falhas === 0
-    ? '\nOK: ' + 9 + ' verificações, 0 falha(s).'
+    ? '\nOK: todas as verificações passaram.'
     : '\nFALHOU: ' + falhas + ' falha(s).');
 process.exit(falhas ? 1 : 0);
