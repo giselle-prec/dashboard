@@ -24,6 +24,12 @@
                         <a class="nav-link" href="oxigenacao.php">Painel de Oxigenação</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="precabot.php">Tabela do Sistema (Precabot)</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="tjrj.php">Tabela do Site do TJRJ</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#">Link</a>
                     </li>
                 </ul>

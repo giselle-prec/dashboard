@@ -6,6 +6,8 @@ return [
     'index',
     'prospeccao',
     'oxigenacao',
+    'precabot',
+    'tjrj',
     'teste',
     'login',
     '404',
