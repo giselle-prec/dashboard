@@ -7,12 +7,12 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body>
+<body class="com-sidebar">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
 <div class="container-fluid" style="max-width: 1400px;">
-    <h2>Tabela do Site do TJRJ</h2>
+    <h1 class="page-title">Tabela do Site do TJRJ</h1>
 
     <form id="form-tjrj" class="row g-3 mb-4">
         <div class="col-12">

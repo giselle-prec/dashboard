@@ -11,14 +11,12 @@ $title = "Index";
  require __DIR__ . '/templates/head.php';
 ?>
 
-<body>
+<body class="com-sidebar">
 <?php require __DIR__.'/templates/scripts.php' ?>
 <?php require __DIR__.'/templates/nav_top.php' ?>
 
-
-<script src="js/bootstrap.bundle.min.js"></script>
 <div class="container">
-    <h2>Informações Batch</h2>
+    <h1 class="page-title">Informações Batch</h1>
     <form method="post" action="/public/batch_atualiza/process_csv.php" enctype="multipart/form-data">
     <div class="form-group">
             <label for="exampleFormControlSelect1">Ente</label>

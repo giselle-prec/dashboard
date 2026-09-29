@@ -17,7 +17,7 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body>
+<body class="com-sidebar">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
@@ -30,8 +30,8 @@
 </style>
 
 <div class="container-fluid" style="max-width: 1400px;">
-    <h2>Painel de Oxigenação</h2>
-    <p class="text-muted">
+    <h1 class="page-title">Painel de Oxigenação</h1>
+    <p class="page-subtitle">
         Oxigenação é a saída do precatório do status <strong>Sem Tentativa</strong> para qualquer outro status.
         Cada precatório é contado uma única vez, na data em que saiu pela primeira vez.
     </p>

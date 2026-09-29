@@ -12,13 +12,17 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body style="padding-top:4.2rem; padding-bottom:4.2rem; background:rgba(0, 0, 0, 0.76);">
+<body class="pagina-login">
 <div class="container">
     <div class="row">
         <div class="col-md-5 mx-auto">
-            <div class="card">
+            <div class="card login-card">
                 <div class="card-body p-4">
-                    <h1 class="text-center mb-3">Login</h1>
+                    <div class="login-brand">
+                        <img src="img/logo-precapp.svg" alt="">
+                        <span>Precapp</span>
+                    </div>
+                    <h1 class="login-title text-center mb-3">Login</h1>
 
                     <?php if ($erro): ?>
                         <div class="alert alert-danger" role="alert"><?php echo htmlspecialchars($erro); ?></div>

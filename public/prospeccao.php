@@ -13,7 +13,7 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body>
+<body class="com-sidebar">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
@@ -28,7 +28,7 @@
 </style>
 
 <div class="container-fluid" style="max-width: 1400px;">
-    <h2>Painel de Prospecção</h2>
+    <h1 class="page-title">Painel de Prospecção</h1>
 
     <form id="form-prospeccao" class="row g-3 align-items-end mb-4">
         <div class="col-md-3">
