@@ -1072,7 +1072,8 @@ body.pagina-login > .container {
 }
 
 .login-brand img {
-    width: 48px;
+    width: 100%;
+    max-width: 300px;
     height: auto;
 }
 

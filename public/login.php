@@ -19,8 +19,7 @@
             <div class="card login-card">
                 <div class="card-body p-4">
                     <div class="login-brand">
-                        <img src="img/logo-precapp.svg" alt="">
-                        <span>Precapp</span>
+                        <img src="img/logo-precapp-completo.svg" alt="Precapp - Precatórios Judiciais">
                     </div>
                     <h1 class="login-title text-center mb-3">Login</h1>
 
