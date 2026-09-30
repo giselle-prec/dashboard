@@ -279,6 +279,18 @@ body.com-sidebar > .container-fluid {
     justify-content: center;
     font-size: 1.15rem;
     flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Foto de perfil (Usuario.photo) por cima do ícone, nos dois avatares. */
+.sidebar-profile-avatar img,
+.navbar-profile-avatar img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .sidebar-profile-info {
@@ -487,6 +499,8 @@ body.sidebar-minimized .btn-desktop-toggle .fa {
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    overflow: hidden;
 }
 
 .navbar-profile-name {

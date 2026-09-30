@@ -10,6 +10,9 @@
 
     var charts = {};
 
+    // Consultor (PerfilId 2): a API já devolve só os precatórios dele.
+    var somenteConsultor = $('body').hasClass('perfil-consultor');
+
     function formatarMoeda(valor) {
         return moedaFormatter.format(Number(valor) || 0);
     }
@@ -35,6 +38,11 @@
 
     // O contêiner começa com um "Carregando..." em HTML, que sai antes do desenho.
     function desenhar(id, chart) {
+        // O gráfico por consultor não é desenhado na página para o consultor.
+        if (!document.getElementById(id)) {
+            chart.dispose();
+            return;
+        }
         descartarGrafico(id);
         $('#' + id).empty();
         charts[id] = chart;
@@ -256,8 +264,11 @@
         $('#card-pendente-qtd').text(formatarInteiro(resumo.qtd_total) + ' precatórios ativos em ' +
             formatarInteiro(resposta.qtd_entes) + ' entes');
 
-        $('#prosp-subtitulo').text(formatarInteiro(resposta.qtd_entes) + ' entes. Mesmos números do Painel de ' +
-            'Prospecção com todos esses entes selecionados e nenhum outro filtro.');
+        $('#prosp-subtitulo').text(somenteConsultor
+            ? 'Seus precatórios pendentes estão em ' + formatarInteiro(resposta.qtd_entes) + ' entes. Mesmos ' +
+              'números do Painel de Prospecção com esses entes selecionados e nenhum outro filtro.'
+            : formatarInteiro(resposta.qtd_entes) + ' entes. Mesmos números do Painel de ' +
+              'Prospecção com todos esses entes selecionados e nenhum outro filtro.');
 
         preencherCardsProspeccao(resumo);
         graficoPizzaProspeccao(resumo);

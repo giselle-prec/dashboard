@@ -10,8 +10,15 @@ require __DIR__ . '/../../src/oxigenacao_repository.php';
 
 try {
     $acao = $_GET['acao'] ?? 'oxigenacao';
+    $negociador = auth_negociador_restrito();
 
     if ($acao === 'foto') {
+        // A aba "Foto por data" não existe para o consultor.
+        if ($negociador !== null) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'erro' => 'Sem permissão para a foto por data.']);
+            exit;
+        }
         $filtros = oxigenacao_parse_filtros($_GET, 'foto');
         $foto = oxigenacao_foto_por_data($pdo, $filtros);
         $cruzamentos = oxigenacao_foto_cruzamentos($pdo, $filtros);
@@ -33,7 +40,7 @@ try {
                 : null,
         ]);
     } elseif ($acao === 'oxigenacao') {
-        $filtros = oxigenacao_parse_filtros($_GET, 'periodo');
+        $filtros = oxigenacao_parse_filtros($_GET, 'periodo', $negociador);
 
         $eventos = oxigenacao_eventos($pdo, $filtros);
         $agregados = oxigenacao_agregar($eventos);

@@ -149,7 +149,10 @@ function oxigenacao_dia_seguinte($data) {
 }
 
 // Normaliza e valida os filtros. $modo = 'periodo' (aba 1) ou 'foto' (aba 2).
-function oxigenacao_parse_filtros(array $input, $modo = 'periodo') {
+// $negociadorId restringe tudo aos precatórios de um consultor (ver
+// auth_negociador_restrito): ele substitui o filtro de consultor que vier em
+// $input, e vem da sessão, nunca da requisição.
+function oxigenacao_parse_filtros(array $input, $modo = 'periodo', $negociadorId = null) {
     $filtros = [
         'ente_id'      => oxigenacao_sanitize_lista_int($input['ente_id'] ?? null, 'Ente'),
         'orcamento'    => oxigenacao_sanitize_lista_int($input['orcamento'] ?? null, 'Orçamento'),
@@ -162,6 +165,10 @@ function oxigenacao_parse_filtros(array $input, $modo = 'periodo') {
         'somente_pendentes'       => !empty($input['somente_pendentes']),
         'modo'         => $modo,
     ];
+
+    if ($negociadorId !== null) {
+        $filtros['consultor_id'] = [(int)$negociadorId];
+    }
 
     foreach ($filtros['orcamento'] as $ano) {
         prospeccao_sanitize_orcamento($ano);

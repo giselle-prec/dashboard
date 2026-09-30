@@ -8,7 +8,6 @@ require_once __DIR__ . '/auth.php';
 
 auth_iniciar_sessao();
 
-$rotas_permitidas = require __DIR__ . '/rotas.php';
 $rota = $rota ?? null;
 
 if (!auth_usuario_logado() && $rota !== 'login') {
@@ -21,7 +20,14 @@ if (auth_usuario_logado() && $rota === 'login') {
     exit;
 }
 
-if (!in_array($rota, $rotas_permitidas, true)) {
+$rotas_permitidas = require __DIR__ . '/rotas.php';
+if (!array_key_exists((string)$rota, $rotas_permitidas)) {
     header('Location: 404.php');
+    exit;
+}
+
+// Página que existe, mas não para o perfil de quem está logado.
+if (!auth_pode_acessar_rota($rota)) {
+    header('Location: index.php');
     exit;
 }

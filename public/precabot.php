@@ -10,7 +10,7 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body class="com-sidebar">
+<body class="com-sidebar<?php echo auth_eh_consultor() ? ' perfil-consultor' : ''; ?>">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 

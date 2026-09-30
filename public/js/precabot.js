@@ -17,13 +17,22 @@
         return 'Eletrônico';
     }
 
+    // Consultor (PerfilId 2) não tem os botões de exportação; sem eles o
+    // DataTables volta ao layout padrão (seletor de itens por página).
+    function layoutComExportacao() {
+        if ($('body').hasClass('perfil-consultor')) {
+            return {};
+        }
+        return {
+            topStart: {
+                buttons: ['copyHtml5', 'excelHtml5', 'csvHtml5', 'pdfHtml5']
+            }
+        };
+    }
+
     function criarTabela() {
         tabela = new DataTable('#tabela-precabot', {
-            layout: {
-                topStart: {
-                    buttons: ['copyHtml5', 'excelHtml5', 'csvHtml5', 'pdfHtml5']
-                }
-            },
+            layout: layoutComExportacao(),
             pageLength: 25,
             order: [[0, 'asc']],
             scrollX: true,

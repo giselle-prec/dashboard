@@ -13,6 +13,8 @@
 //   então um contato feito num sábado ou domingo conta na janela em que cai.
 // - Prospecção e batch olham para os entes que têm precatório pendente de
 //   pagamento (inicio_entes_pendentes).
+// - Para o consultor, tudo é recortado pelos precatórios em que ele é o
+//   negociador ($negociadorId, vindo de auth_negociador_restrito).
 
 require_once __DIR__ . '/oxigenacao_repository.php';
 
@@ -80,11 +82,11 @@ function inicio_janelas_semana($hoje) {
 // Uma consulta só, cobrindo as duas janelas; os eventos são separados aqui
 // pela data de oxigenação. Os gráficos são da janela atual; da anterior só
 // interessa o total, para a comparação.
-function inicio_resumo_oxigenacao(PDO $pdo, array $janelas) {
+function inicio_resumo_oxigenacao(PDO $pdo, array $janelas, $negociadorId = null) {
     $filtros = oxigenacao_parse_filtros([
         'data_inicio' => $janelas['anterior']['inicio'],
         'data_fim'    => $janelas['atual']['fim'],
-    ], 'periodo');
+    ], 'periodo', $negociadorId);
 
     $eventosAtual = [];
     $anterior = ['qtd' => 0, 'valor' => 0.0];
@@ -121,15 +123,23 @@ function inicio_resumo_oxigenacao(PDO $pdo, array $janelas) {
 // Entes com ao menos um precatório pendente de pagamento. Id zero ou negativo
 // fica de fora: não é ente de verdade e seria recusado pelo filtro da
 // prospecção (prospeccao_sanitize_ente_ids).
-function inicio_entes_pendentes(PDO $pdo) {
+function inicio_entes_pendentes(PDO $pdo, $negociadorId = null) {
+    $params = [];
     $sql = 'SELECT ' . OXI_HINT_TIMEOUT . ' DISTINCT p.EnteId
             FROM ' . OXI_TB_PRECATORIO . ' p
             WHERE p.prec_pg IS NULL
-              AND p.EnteId IS NOT NULL
-            ORDER BY p.EnteId';
+              AND p.EnteId IS NOT NULL';
+    if ($negociadorId !== null) {
+        $sql .= ' AND p.Negociador = ?';
+        $params[] = (int)$negociadorId;
+    }
+    $sql .= ' ORDER BY p.EnteId';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
 
     $ids = [];
-    foreach ($pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN) as $id) {
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
         if ((int)$id > 0) {
             $ids[] = (int)$id;
         }
@@ -144,7 +154,7 @@ function inicio_entes_pendentes(PDO $pdo) {
 // os entes, milhares de linhas. O gráfico só usa o total de cada status, então
 // o ente é somado aqui e o navegador recebe uma linha por status, na mesma
 // ordem em que o painel as desenha.
-function inicio_resumo_prospeccao(PDO $pdo, array $enteIds) {
+function inicio_resumo_prospeccao(PDO $pdo, array $enteIds, $negociadorId = null) {
     if (empty($enteIds)) {
         return [
             'resumo'     => [
@@ -157,7 +167,7 @@ function inicio_resumo_prospeccao(PDO $pdo, array $enteIds) {
         ];
     }
 
-    $filtros = prospeccao_parse_filtros(['ente_id' => $enteIds]);
+    $filtros = prospeccao_parse_filtros(['ente_id' => $enteIds], $negociadorId);
 
     $porStatus = [];
     foreach (prospeccao_detalhe($pdo, $filtros) as $linha) {

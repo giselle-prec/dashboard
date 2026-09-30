@@ -8,6 +8,10 @@
     var tabelasConsultora = {};
     var charts = {};
 
+    // Consultor (PerfilId 2): a API já devolve só os precatórios dele, e a tela
+    // fica sempre no "Detalhe por Consultora", sem os controles de agrupamento.
+    var somenteConsultor = $('body').hasClass('perfil-consultor');
+
     // Última resposta carregada — a troca de modo/consultora reaproveita
     // esses dados e recalcula tudo no navegador, sem nova requisição.
     var ultimoDetalhe = [];
@@ -33,7 +37,7 @@
             data_max: $('#data_max').val(),
             valor_min: $('#valor_min').val(),
             campo_valor: $('input[name="campo_valor"]:checked').val() || 'ValorPrec',
-            por_consultora: $('#por_consultora').is(':checked') ? 1 : 0
+            por_consultora: (somenteConsultor || $('#por_consultora').is(':checked')) ? 1 : 0
         };
     }
 
@@ -385,8 +389,14 @@
     }
 
     function atualizarSecaoConsultoraDetalhe() {
-        var nome = $('#select-consultora').val();
-        var subset = ultimoDetalhe.filter(function (linha) { return linha.FirstName === nome; });
+        var nome, subset;
+        if (somenteConsultor) {
+            subset = ultimoDetalhe;
+            nome = subset.length ? subset[0].FirstName : '';
+        } else {
+            nome = $('#select-consultora').val();
+            subset = ultimoDetalhe.filter(function (linha) { return linha.FirstName === nome; });
+        }
 
         var geral = calcularResumoDeStatus(subset);
         var melhores = calcularResumoMelhores(subset);
@@ -412,6 +422,9 @@
     // ---- Alternância de modo/visibilidade ----
 
     function modoConsultoraAtual() {
+        if (somenteConsultor) {
+            return 'detalhe';
+        }
         return $('input[name="modo_consultora"]:checked').val() || 'geral';
     }
 
@@ -477,7 +490,7 @@
                 atualizarPainelPrincipal(ultimoResumo, ultimoDetalhe, ultimoAgrupado);
                 atualizarVisibilidade(ultimoAgrupado);
 
-                if (ultimoAgrupado) {
+                if (ultimoAgrupado && !somenteConsultor) {
                     popularSelectConsultora(ultimoDetalhe);
                 }
                 renderizarModoConsultora();
@@ -496,6 +509,11 @@
     }
 
     $(function () {
+        // Antes da primeira busca o consultor já vê o layout de detalhe.
+        if (somenteConsultor) {
+            atualizarVisibilidade(true);
+        }
+
         $('.select2-multi').each(function () {
             $(this).select2({
                 theme: 'bootstrap-5',

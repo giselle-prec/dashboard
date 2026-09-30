@@ -12,7 +12,7 @@ try {
     // POST em vez de GET: com "selecionar todos" o Ente pode ter milhares de
     // valores marcados, o que estoura o limite de tamanho de URL de um GET.
     $input = $_POST;
-    $filtros = prospeccao_parse_filtros($input);
+    $filtros = prospeccao_parse_filtros($input, auth_negociador_restrito());
 
     $resumo = prospeccao_resumo_geral($pdo, $filtros);
     $detalhe = prospeccao_detalhe($pdo, $filtros);

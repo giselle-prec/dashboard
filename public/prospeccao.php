@@ -9,11 +9,15 @@
     $naturezas = prospeccao_listar_naturezas($pdo);
     $orcamentos = prospeccao_listar_orcamentos($pdo);
 
+    // Consultor vê só o detalhe dele: a API já filtra pelos precatórios em que
+    // ele é o negociador, e a tela não oferece a visão das demais consultoras.
+    $somente_consultor = auth_eh_consultor();
+
     $title = "Painel de Prospecção";
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body class="com-sidebar">
+<body class="com-sidebar<?php echo $somente_consultor ? ' perfil-consultor' : ''; ?>">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
@@ -29,6 +33,9 @@
 
 <div class="container-fluid" style="max-width: 1400px;">
     <h1 class="page-title">Painel de Prospecção</h1>
+    <?php if ($somente_consultor): ?>
+    <p class="page-subtitle">Mostrando apenas os precatórios em que você é o consultor.</p>
+    <?php endif; ?>
 
     <form id="form-prospeccao" class="row g-3 align-items-end mb-4">
         <div class="col-md-3">
@@ -93,10 +100,12 @@
                 <label class="btn btn-outline-secondary" for="campo-valor-tj">Valor Atualizado do TJ</label>
             </div>
         </div>
+        <?php if (!$somente_consultor): ?>
         <div class="col-md-2 form-check ms-2">
             <input type="checkbox" class="form-check-input" id="por_consultora" name="por_consultora">
             <label class="form-check-label" for="por_consultora">Agrupar por consultora</label>
         </div>
+        <?php endif; ?>
         <div class="col-12">
             <button type="submit" class="btn btn-primary">Buscar</button>
         </div>
@@ -106,6 +115,7 @@
 
     <div id="info-ultimo-batch" class="alert alert-info d-none py-2" role="status"></div>
 
+    <?php if (!$somente_consultor): ?>
     <div id="opcoes-consultora" class="mb-3 d-none">
         <div class="btn-group" role="group" aria-label="Modo de visualização por consultora">
             <input type="radio" class="btn-check" name="modo_consultora" id="modo-consultora-geral" value="geral" checked autocomplete="off">
@@ -118,6 +128,7 @@
             <select class="form-select form-select-sm d-inline-block w-auto" id="select-consultora"></select>
         </span>
     </div>
+    <?php endif; ?>
 
     <div class="row g-3 mb-4" id="cards-resumo">
         <div class="col-md-3">

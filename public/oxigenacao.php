@@ -5,9 +5,13 @@
     require __DIR__ . '/../src/crud.php';
     require __DIR__ . '/../src/oxigenacao_repository.php';
 
+    // Consultor vê só os precatórios dele (a API força o filtro pelo id da
+    // sessão): sem filtro nem gráficos por consultor e sem a foto por data.
+    $somente_consultor = auth_eh_consultor();
+
     $read_ente   = DBread($pdo, 'Ente', 'ORDER BY Ente');
     $orcamentos  = oxigenacao_opcoes_orcamento($pdo);
-    $consultores = oxigenacao_opcoes_consultor($pdo);
+    $consultores = $somente_consultor ? [] : oxigenacao_opcoes_consultor($pdo);
     $naturezas   = oxigenacao_opcoes_natureza($pdo);
 
     $hoje       = date('Y-m-d');
@@ -17,7 +21,7 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body class="com-sidebar">
+<body class="com-sidebar<?php echo $somente_consultor ? ' perfil-consultor' : ''; ?>">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
@@ -38,7 +42,7 @@
 
     <div class="card mb-4">
         <div class="card-body">
-            <h6 class="card-title">Filtros (valem para as duas abas)</h6>
+            <h6 class="card-title"><?php echo $somente_consultor ? 'Filtros' : 'Filtros (valem para as duas abas)'; ?></h6>
             <div class="row g-3">
                 <div class="col-md-3">
                     <label for="ente_id" class="form-label">
@@ -54,6 +58,7 @@
                     </select>
                     <div class="form-text">Nenhum selecionado = todos</div>
                 </div>
+                <?php if (!$somente_consultor): ?>
                 <div class="col-md-3">
                     <label for="consultor_id" class="form-label">
                         Consultor
@@ -80,6 +85,7 @@
                     </div>
                     <div class="form-text">Consultor atual do precatório</div>
                 </div>
+                <?php endif; ?>
                 <div class="col-md-2">
                     <label for="orcamento" class="form-label">
                         Orçamento
@@ -136,10 +142,12 @@
             <button class="nav-link active" id="aba-periodo-btn" data-bs-toggle="tab" data-bs-target="#aba-periodo"
                     type="button" role="tab">Oxigenação por período</button>
         </li>
+        <?php if (!$somente_consultor): ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="aba-foto-btn" data-bs-toggle="tab" data-bs-target="#aba-foto"
                     type="button" role="tab">Foto por data</button>
         </li>
+        <?php endif; ?>
     </ul>
 
     <div class="tab-content border border-top-0 p-3 mb-4">
@@ -218,27 +226,31 @@
                     </div>
                     <div id="chart-tempo" style="height: 350px;"></div>
                 </div>
-                <div class="col-md-6">
+                <div class="<?php echo $somente_consultor ? 'col-12' : 'col-md-6'; ?>">
                     <div id="chart-ente" style="height: 350px;"></div>
                 </div>
+                <?php if (!$somente_consultor): ?>
                 <div class="col-md-6">
                     <div id="chart-consultor" style="height: 350px;"></div>
                 </div>
+                <?php endif; ?>
             </div>
 
             <div class="row g-3 mb-4">
                 <div class="col-12">
                     <div id="chart-status-destino"></div>
                     <div class="form-text text-center">
-                        Clique em uma fatia para ver a quebra por ente e por consultor daquele status.
+                        Clique em uma fatia para ver a quebra por ente<?php echo $somente_consultor ? '' : ' e por consultor'; ?> daquele status.
                     </div>
                 </div>
-                <div class="col-md-6">
+                <div class="<?php echo $somente_consultor ? 'col-12' : 'col-md-6'; ?>">
                     <div id="chart-status-ente" style="height: 350px;"></div>
                 </div>
+                <?php if (!$somente_consultor): ?>
                 <div class="col-md-6">
                     <div id="chart-status-consultor" style="height: 350px;"></div>
                 </div>
+                <?php endif; ?>
             </div>
 
             <div id="aviso-truncado" class="alert alert-warning d-none" role="alert"></div>
@@ -249,6 +261,7 @@
             </table>
         </div>
 
+        <?php if (!$somente_consultor): ?>
         <!-- ABA 2 -->
         <div class="tab-pane fade" id="aba-foto" role="tabpanel">
             <form id="form-foto" class="row g-3 align-items-end mb-4">
@@ -345,6 +358,7 @@
                 <tbody></tbody>
             </table>
         </div>
+        <?php endif; ?>
     </div>
 
     <div class="alert alert-secondary small">
@@ -353,11 +367,14 @@
         (<code>HistoricoContato.ResultContatoId</code>). Por isso:
         <ul class="mb-0">
             <li>A data de oxigenação é a do primeiro contato cujo resultado saiu da família <em>Sem Tentativa</em>.</li>
+            <?php if (!$somente_consultor): ?>
             <li>Na foto de uma data passada, o status é o resultado do último contato até aquele dia; sem contato, o
                 precatório aparece como <em>Sem Tentativa</em>. Na data de hoje o painel usa o status atual da tabela
                 de precatórios, que é exato e não depende do histórico.</li>
+            <?php endif; ?>
             <li>Mudanças feitas fora do fluxo de contato (ex.: <em>Pago pelo ente</em>, <em>Pausado</em>, alterações em
                 lote) não estão no histórico e não são reconstruídas.</li>
+            <?php if (!$somente_consultor): ?>
             <li>&quot;Pendentes de pagamento na data&quot; parte do <code>prec_pg</code> e busca a data da quitação em
                 quatro fontes, nesta ordem: a coluna <code>Precatorio.DataQuitacaoBatch</code>; a data da rodada de
                 batch que quitou o precatório (<code>Precatorio.batch</code> = <code>BatchControl.n_batch_quit</code>
@@ -371,6 +388,7 @@
             <li>A foto por data e a base &quot;Sem Tentativa&quot; consultam a tabela <code>Precatorio</code> direto, e
                 não a view <code>precatoriodetalhe</code>. Por isso contam também os precatórios que a view descarta
                 por falta de cadastro relacionado (credor, advogado, réu, tabela de cálculo).</li>
+            <?php endif; ?>
         </ul>
     </div>
 </div>
