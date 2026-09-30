@@ -127,6 +127,8 @@ const api = await pagina.evaluate(() => ({
     getPoint: typeof window.pizza.getPoint === 'function',
     legend: typeof window.pizza.legend === 'function',
     lineMarker: typeof window.coluna.lineMarker === 'function',
+    // Página inicial: eixo de quantidade sem marcas fracionadas.
+    allowFractional: typeof window.coluna.yScale().ticks().allowFractional === 'function',
     dispose: typeof window.pizza.dispose === 'function',
 }));
 Object.keys(api).forEach((nome) => ok('existe ' + nome + '()', api[nome]));

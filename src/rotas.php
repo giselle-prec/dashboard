@@ -4,6 +4,7 @@
 // senão src/guarda.php manda para a 404.
 return [
     'index',
+    'batch',
     'prospeccao',
     'oxigenacao',
     'precabot',

@@ -248,24 +248,44 @@ function prospeccao_listar_orcamentos(PDO $pdo) {
     return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-// Data/hora do batch mais recente entre os entes selecionados (BatchControl
-// não tem uma coluna de data real — data_batch é texto livre — então usamos
-// o idBatchControl, auto-incremento, para achar o registro mais recente).
-function prospeccao_ultimo_batch(PDO $pdo, array $enteIds) {
+// Último batch de cada um dos entes, do mais antigo para o mais recente. Ente
+// que nunca passou por batch não aparece. BatchControl não tem uma coluna de
+// data real — data_batch é texto livre — então a recência vem do
+// idBatchControl, auto-incremento: o maior id de cada ente é o último batch
+// dele, e ordenar por esse id põe primeiro quem está há mais tempo sem batch.
+function prospeccao_ultimo_batch_por_ente(PDO $pdo, array $enteIds) {
     if (empty($enteIds)) {
-        return null;
+        return [];
     }
     $stmt = $pdo->prepare("
-        SELECT BatchControl.data_batch, BatchControl.ente_id, Ente.Ente AS nome_ente
-        FROM precappapp.BatchControl
-        LEFT JOIN precappapp.Ente ON precappapp.Ente.ente_id = BatchControl.ente_id
-        WHERE BatchControl.ente_id IN (" . prospeccao_placeholders(count($enteIds)) . ")
-        ORDER BY BatchControl.idBatchControl DESC
-        LIMIT 1
+        SELECT b.idBatchControl, b.data_batch, b.ente_id, e.Ente AS nome_ente
+        FROM (
+            SELECT ente_id, MAX(idBatchControl) AS UltId
+            FROM precappapp.BatchControl
+            WHERE ente_id IN (" . prospeccao_placeholders(count($enteIds)) . ")
+            GROUP BY ente_id
+        ) ult
+        JOIN precappapp.BatchControl b ON b.idBatchControl = ult.UltId
+        LEFT JOIN precappapp.Ente e ON e.ente_id = b.ente_id
+        ORDER BY b.idBatchControl
     ");
-    $stmt->execute($enteIds);
-    $linha = $stmt->fetch();
-    return $linha ?: null;
+    $stmt->execute(array_values($enteIds));
+    return $stmt->fetchAll();
+}
+
+// Data/hora do batch mais recente entre os entes selecionados: o último da
+// lista de prospeccao_ultimo_batch_por_ente().
+function prospeccao_ultimo_batch(PDO $pdo, array $enteIds) {
+    $porEnte = prospeccao_ultimo_batch_por_ente($pdo, $enteIds);
+    if (empty($porEnte)) {
+        return null;
+    }
+    $linha = end($porEnte);
+    return [
+        'data_batch' => $linha['data_batch'],
+        'ente_id'    => $linha['ente_id'],
+        'nome_ente'  => $linha['nome_ente'],
+    ];
 }
 
 // Painel geral: total de precatórios ativos e pendentes de pagamento do
