@@ -10,12 +10,12 @@
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body>
+<body class="com-sidebar">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
 <div class="container-fluid" style="max-width: 1400px;">
-    <h2>Tabela do Sistema (Precabot)</h2>
+    <h1 class="page-title">Tabela do Sistema (Precabot)</h1>
 
     <form id="form-precabot" class="row g-3 align-items-end mb-4">
         <div class="col-12">
