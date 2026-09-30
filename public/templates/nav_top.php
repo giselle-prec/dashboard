@@ -5,6 +5,7 @@
     $menu_secoes = [
         'Menu' => [
             ['rota' => 'index',      'href' => 'index.php',      'icone' => 'fa-home',       'texto' => 'Início'],
+            ['rota' => 'batch',      'href' => 'batch.php',      'icone' => 'fa-upload',     'texto' => 'Informações Batch'],
         ],
         'Painéis' => [
             ['rota' => 'prospeccao', 'href' => 'prospeccao.php', 'icone' => 'fa-bar-chart',  'texto' => 'Painel de Prospecção'],
