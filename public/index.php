@@ -1,4 +1,15 @@
 <?php
+    // php -S sem o router.php: o servidor embutido manda para cá todo endereço
+    // que não existe (/login, /prospeccao...) e a guarda redirecionaria para
+    // "login" sem parar. Em vez disso, mostra o comando certo.
+    if (PHP_SAPI === 'cli-server' && !function_exists('roteador_resolver')) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "Rode o servidor com o roteador, dentro de public/:\n\n"
+           . "    php -S {$_SERVER['SERVER_NAME']}:{$_SERVER['SERVER_PORT']} router.php\n";
+        exit;
+    }
+
     $rota = 'index';
     require __DIR__ . '/../src/guarda.php';
     require __DIR__ . '/../src/inicio_repository.php';

@@ -11,6 +11,10 @@
 //   /api/inicio       → api/inicio.php
 //   /prospeccao.php   → redireciona para /prospeccao
 //
+// Sem o router.php no comando, o index.php mostra este comando em vez de
+// abrir a página (o php -S entregaria o index.php para /login e entraria em
+// laço de redirecionamento).
+//
 // Em produção quem cuida das URLs é o .htaccess; lá este arquivo não faz nada.
 
 if (PHP_SAPI !== 'cli-server') {
