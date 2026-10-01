@@ -16,10 +16,11 @@ require __DIR__ . '/../../src/inicio_repository.php';
 try {
     $acao = $_GET['acao'] ?? '';
     $hoje = date('Y-m-d');
+    $negociador = auth_negociador_restrito();
 
     if ($acao === 'oxigenacao') {
         $janelas = inicio_janelas_semana($hoje);
-        $resumo = inicio_resumo_oxigenacao($pdo, $janelas);
+        $resumo = inicio_resumo_oxigenacao($pdo, $janelas, $negociador);
 
         echo json_encode([
             'ok'                 => true,
@@ -31,9 +32,12 @@ try {
             'base_sem_tentativa' => $resumo['base_sem_tentativa'],
         ]);
     } elseif ($acao === 'prospeccao') {
-        $enteIds = inicio_entes_pendentes($pdo);
-        $prospeccao = inicio_resumo_prospeccao($pdo, $enteIds);
-        $batch = inicio_batch_mais_antigos($pdo, $enteIds, $hoje);
+        $enteIds = inicio_entes_pendentes($pdo, $negociador);
+        $prospeccao = inicio_resumo_prospeccao($pdo, $enteIds, $negociador);
+        // Informação de batch só vai para quem pode abrir a página de batch.
+        $batch = auth_pode_acessar_rota('batch')
+            ? inicio_batch_mais_antigos($pdo, $enteIds, $hoje)
+            : ['mais_antigos' => [], 'entes_sem_batch' => 0];
 
         echo json_encode([
             'ok'                 => true,

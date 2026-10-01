@@ -16,7 +16,24 @@
             ['rota' => 'tjrj',       'href' => 'tjrj.php',       'icone' => 'fa-university', 'texto' => 'Tabela do Site do TJRJ'],
         ],
     ];
+    // Só entram os itens que o perfil logado pode abrir (src/rotas.php); uma
+    // seção que fica sem itens não é desenhada.
+    foreach ($menu_secoes as $secao => $itens) {
+        $menu_secoes[$secao] = array_filter($itens, function ($item) {
+            return auth_pode_acessar_rota($item['rota']);
+        });
+        if (!$menu_secoes[$secao]) {
+            unset($menu_secoes[$secao]);
+        }
+    }
     $menu_usuario = isset($_SESSION['user']) ? htmlspecialchars($_SESSION['user']) : '';
+    $menu_foto = auth_url_foto($_SESSION['foto'] ?? null);
+
+    // O ícone fica sempre por baixo: se a foto não carregar, ela sai e ele aparece.
+    $menu_avatar = '<i class="fa fa-user" aria-hidden="true"></i>';
+    if ($menu_foto !== null) {
+        $menu_avatar .= '<img src="' . htmlspecialchars($menu_foto) . '" alt="" onerror="this.remove()">';
+    }
 ?>
 <script>
     // Aplica o "menu minimizado" antes do primeiro desenho, sem piscar.
@@ -51,7 +68,7 @@
 
     <?php if ($menu_usuario !== ''): ?>
     <div class="sidebar-profile">
-        <div class="sidebar-profile-avatar"><i class="fa fa-user" aria-hidden="true"></i></div>
+        <div class="sidebar-profile-avatar"><?php echo $menu_avatar; ?></div>
         <div class="sidebar-profile-info">
             <div class="sidebar-profile-name">Usuário</div>
             <div class="sidebar-profile-email" title="<?php echo $menu_usuario; ?>"><?php echo $menu_usuario; ?></div>
@@ -80,7 +97,7 @@
         <div class="dropdown">
             <button class="navbar-profile-btn dropdown-toggle" type="button" id="profile-dropdown"
                     data-bs-toggle="dropdown" aria-expanded="false">
-                <span class="navbar-profile-avatar"><i class="fa fa-user" aria-hidden="true"></i></span>
+                <span class="navbar-profile-avatar"><?php echo $menu_avatar; ?></span>
                 <span class="navbar-profile-name"><?php echo $menu_usuario; ?></span>
                 <i class="fa fa-chevron-down navbar-profile-caret" aria-hidden="true"></i>
             </button>

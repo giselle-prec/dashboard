@@ -11,11 +11,17 @@
     $rotulo_atual    = inicio_rotulo_janela($janelas['atual']);
     $rotulo_anterior = inicio_rotulo_janela($janelas['anterior']);
 
+    // Consultor vê os números só dos precatórios dele (a API filtra pelo id da
+    // sessão), sem o gráfico por consultor. A seção de batch acompanha a
+    // permissão da página de batch.
+    $somente_consultor = auth_eh_consultor();
+    $mostrar_batch = auth_pode_acessar_rota('batch');
+
     $title = "Início";
     require __DIR__ . '/templates/head.php';
 ?>
 
-<body class="com-sidebar">
+<body class="com-sidebar<?php echo $somente_consultor ? ' perfil-consultor' : ''; ?>">
 <?php require __DIR__ . '/templates/scripts.php' ?>
 <?php require __DIR__ . '/templates/nav_top.php' ?>
 
@@ -62,6 +68,9 @@
 
 <div class="container-fluid" style="max-width: 1400px;">
     <h1 class="page-title">Resumo semanal</h1>
+    <?php if ($somente_consultor): ?>
+    <p class="page-subtitle mb-1">Mostrando apenas os precatórios em que você é o consultor.</p>
+    <?php endif; ?>
     <p class="page-subtitle">
         Semana atual: <strong><?php echo $rotulo_atual; ?></strong> (5 dias úteis, contando hoje) ·
         comparada com <strong><?php echo $rotulo_anterior; ?></strong> (os 5 dias úteis anteriores).
@@ -108,8 +117,8 @@
             <div>
                 <h2>Oxigenação nos últimos 5 dias úteis</h2>
                 <p class="page-subtitle">
-                    <?php echo $rotulo_atual; ?> · precatórios que saíram de <strong>Sem Tentativa</strong>,
-                    pelo consultor atual do precatório.
+                    <?php echo $rotulo_atual; ?> · precatórios que saíram de <strong>Sem Tentativa</strong><?php
+                    echo $somente_consultor ? '.' : ', pelo consultor atual do precatório.'; ?>
                 </p>
             </div>
             <a href="oxigenacao.php" class="btn btn-primary">
@@ -120,11 +129,13 @@
         <div id="alerta-oxigenacao" class="alert alert-danger d-none" role="alert"></div>
 
         <div class="row g-3">
+            <?php if (!$somente_consultor): ?>
             <div class="col-12">
                 <div id="chart-oxi-consultor" style="height: 380px;">
                     <div class="inicio-aguardando">Carregando...</div>
                 </div>
             </div>
+            <?php endif; ?>
             <div class="col-12">
                 <div id="chart-oxi-ente" style="height: 440px;">
                     <div class="inicio-aguardando">Carregando...</div>
@@ -137,7 +148,9 @@
     <section class="inicio-secao">
         <div class="inicio-secao-cabecalho">
             <div>
-                <h2>Prospecção de todos os entes com precatórios pendentes</h2>
+                <h2><?php echo $somente_consultor
+                    ? 'Prospecção dos seus precatórios pendentes'
+                    : 'Prospecção de todos os entes com precatórios pendentes'; ?></h2>
                 <p class="page-subtitle" id="prosp-subtitulo">
                     Mesmos números do Painel de Prospecção com todos esses entes selecionados e nenhum outro filtro.
                 </p>
@@ -202,6 +215,7 @@
         </div>
     </section>
 
+    <?php if ($mostrar_batch): ?>
     <!-- Batch -->
     <section class="inicio-secao">
         <div class="inicio-secao-cabecalho">
@@ -218,6 +232,7 @@
         </div>
         <p class="form-text mt-2 mb-0" id="batch-nota"></p>
     </section>
+    <?php endif; ?>
 </div>
 
 <!-- jQuery -->

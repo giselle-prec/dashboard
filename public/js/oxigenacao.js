@@ -93,6 +93,12 @@
     }
 
     function desenhar(id, chart) {
+        // Parte dos gráficos não é desenhada na página para o consultor
+        // (por consultor, foto por data): sem contêiner, não há o que fazer.
+        if (!document.getElementById(id)) {
+            chart.dispose();
+            return;
+        }
         if (charts[id]) {
             charts[id].dispose();
         }

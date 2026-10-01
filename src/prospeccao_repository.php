@@ -145,7 +145,9 @@ function prospeccao_sanitize_campo_valor($raw) {
 }
 
 // Normaliza e valida todos os filtros vindos do formulário/API.
-function prospeccao_parse_filtros(array $input) {
+// $negociadorId restringe tudo aos precatórios de um consultor (ver
+// auth_negociador_restrito); vem da sessão, nunca de $input.
+function prospeccao_parse_filtros(array $input, $negociadorId = null) {
     return [
         'ente_ids'       => prospeccao_sanitize_ente_ids($input['ente_id'] ?? null),
         'orcamentos'     => prospeccao_sanitize_orcamentos($input['orcamento'] ?? null),
@@ -154,6 +156,7 @@ function prospeccao_parse_filtros(array $input) {
         'valor_min'      => prospeccao_sanitize_valor_min($input['valor_min'] ?? null),
         'campo_valor'    => prospeccao_sanitize_campo_valor($input['campo_valor'] ?? null),
         'por_consultora' => !empty($input['por_consultora']),
+        'negociador_id'  => $negociadorId === null ? null : (int)$negociadorId,
     ];
 }
 
@@ -179,6 +182,11 @@ function prospeccao_build_where(array $filtros, $incluirPipeline, &$params) {
     ];
     foreach ($filtros['ente_ids'] as $enteId) {
         $params[] = $enteId;
+    }
+
+    if (($filtros['negociador_id'] ?? null) !== null) {
+        $clausulas[] = 'precatoriodetalhe.Negociador = ?';
+        $params[] = $filtros['negociador_id'];
     }
 
     if ($incluirPipeline) {

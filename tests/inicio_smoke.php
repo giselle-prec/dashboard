@@ -144,7 +144,7 @@ $pdo->exec('CREATE TABLE precappapp.precatoriodetalhe (precatorio_id INTEGER, Pr
             ValorPrec TEXT, vlr_atual_tj TEXT, DataRecebimento TEXT, StatusId INTEGER, StatusPrec TEXT,
             prec_pg TEXT, Active INTEGER, RequisitorioId INTEGER, NaturezaId INTEGER)');
 $pdo->exec('CREATE TABLE precappapp.Precatorio (precatorio_id INTEGER, EnteId INTEGER, StatusId INTEGER,
-            ValorPrec TEXT, prec_pg TEXT)');
+            ValorPrec TEXT, prec_pg TEXT, Negociador INTEGER)');
 $pdo->exec('CREATE TABLE precappapp.BatchControl (idBatchControl INTEGER, data_batch TEXT, ente_id INTEGER)');
 $pdo->exec('CREATE TABLE precappapp.Ente (ente_id INTEGER, Ente TEXT)');
 
@@ -312,6 +312,67 @@ $ultimo = prospeccao_ultimo_batch($pdo, [66]);
 verificar('prospeccao_ultimo_batch: um ente só', $ultimo['data_batch'] === '15/05/2024');
 verificar('prospeccao_ultimo_batch: sem entes', prospeccao_ultimo_batch($pdo, []) === null);
 verificar('prospeccao_ultimo_batch: ente sem batch', prospeccao_ultimo_batch($pdo, [102]) === null);
+
+// ---------------------------------------------------------------------------
+echo "Consultor: só os precatórios em que é o negociador\n";
+// ---------------------------------------------------------------------------
+
+// Na tabela Precatorio (base "Sem Tentativa" e entes pendentes): 1001 e 1006
+// são da Ana (10), 1002 e 1007 da Bia (11); os demais não têm negociador.
+$pdo->exec('UPDATE precappapp.Precatorio SET Negociador = 10 WHERE precatorio_id IN (1001, 1006)');
+$pdo->exec('UPDATE precappapp.Precatorio SET Negociador = 11 WHERE precatorio_id IN (1002, 1007)');
+
+$oxiAna = inicio_resumo_oxigenacao($pdo, inicio_janelas_semana('2026-09-30'), 10);
+verificar('oxigenação da semana só da Ana (P1 e P3)',
+    $oxiAna['semana_atual']['qtd'] === 2 && abs($oxiAna['semana_atual']['valor'] - 1200) < 0.001,
+    json_encode($oxiAna['semana_atual']));
+verificar('semana anterior só da Ana (P4)',
+    $oxiAna['semana_anterior']['qtd'] === 1 && abs($oxiAna['semana_anterior']['valor'] - 300) < 0.001,
+    json_encode($oxiAna['semana_anterior']));
+verificar('por consultor traz só a Ana',
+    array_column($oxiAna['por_consultor'], 'qtd', 'rotulo') === ['Ana' => 2], json_encode($oxiAna['por_consultor']));
+verificar('top de entes só com os entes da Ana', count($oxiAna['por_ente']) === 2, json_encode($oxiAna['por_ente']));
+verificar('base em Sem Tentativa só da Ana (1001)',
+    $oxiAna['base_sem_tentativa']['qtd'] === 1 && abs($oxiAna['base_sem_tentativa']['valor'] - 100) < 0.001,
+    json_encode($oxiAna['base_sem_tentativa']));
+
+verificar('entes pendentes da Ana', inicio_entes_pendentes($pdo, 10) === [66],
+    json_encode(inicio_entes_pendentes($pdo, 10)));
+verificar('entes pendentes da Bia', inicio_entes_pendentes($pdo, 11) === [70, 100],
+    json_encode(inicio_entes_pendentes($pdo, 11)));
+
+$prospAna = inicio_resumo_prospeccao($pdo, [66, 70], 10);
+verificar('prospecção só com os precatórios da Ana (Q1, Q2 e Q4)',
+    $prospAna['resumo']['qtd_total'] === 3 && abs($prospAna['resumo']['valor_total'] - 1800) < 0.001
+    && $prospAna['resumo']['qtd_prospectados'] === 1 && $prospAna['resumo']['qtd_pendente_sem_req'] === 1,
+    json_encode($prospAna['resumo']));
+$prospBia = inicio_resumo_prospeccao($pdo, [66, 70], 11);
+verificar('prospecção só com os precatórios da Bia (Q3)',
+    $prospBia['resumo']['qtd_total'] === 1 && $prospBia['resumo']['qtd_pendente_com_req'] === 1
+    && $prospBia['por_status'] === [['StatusPrec' => 'Sem Tentativa', 'QuantidadeTotal' => 1, 'ValorTotal' => 200.0]],
+    json_encode($prospBia));
+
+// O que a API do Painel de Prospecção faz para o consultor: agrupado por
+// consultora e restrito ao negociador da sessão.
+$pdo->exec('CREATE TABLE precappapp.Usuario (usuario_id INTEGER, PerfilId INTEGER, FirstName TEXT)');
+inserir($pdo, 'Usuario', ['usuario_id', 'PerfilId', 'FirstName'], [[10, 2, 'Ana'], [11, 2, 'Bia']]);
+$detalheAna = prospeccao_detalhe($pdo, prospeccao_parse_filtros(['ente_id' => [66, 70], 'por_consultora' => 1], 10));
+verificar('painel de prospecção: detalhe por consultora só com a Ana',
+    array_values(array_unique(array_column($detalheAna, 'FirstName'))) === ['Ana']
+    && array_sum(array_column($detalheAna, 'QuantidadeTotal')) === 2, json_encode($detalheAna));
+
+// O negociador vem da sessão: o que chega na requisição não vale.
+$filtrosOxi = oxigenacao_parse_filtros(
+    ['consultor_id' => ['11', '12'], 'data_inicio' => '2026-09-01', 'data_fim' => '2026-09-30'], 'periodo', 10);
+verificar('oxigenação: negociador substitui o consultor da requisição', $filtrosOxi['consultor_id'] === [10],
+    json_encode($filtrosOxi['consultor_id']));
+$filtrosOxi = oxigenacao_parse_filtros(
+    ['consultor_id' => ['11'], 'data_inicio' => '2026-09-01', 'data_fim' => '2026-09-30'], 'periodo');
+verificar('oxigenação: sem negociador, vale o consultor escolhido', $filtrosOxi['consultor_id'] === [11]);
+verificar('prospecção: negociador_id da requisição é ignorado',
+    prospeccao_parse_filtros(['ente_id' => [66], 'negociador_id' => 11])['negociador_id'] === null);
+verificar('prospecção: negociador da sessão entra como inteiro',
+    prospeccao_parse_filtros(['ente_id' => [66]], '10')['negociador_id'] === 10);
 
 echo "\n{$total} verificações, {$falhas} falha(s).\n";
 exit($falhas > 0 ? 1 : 0);
