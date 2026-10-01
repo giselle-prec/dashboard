@@ -79,7 +79,7 @@
         $('#carregando').removeClass('d-none');
 
         $.ajax({
-            url: 'api/precabot.php',
+            url: 'api/precabot',
             method: 'GET',
             dataType: 'json',
             data: filtros
@@ -95,7 +95,7 @@
             })
             .fail(function (xhr) {
                 if (xhr.status === 401) {
-                    window.location = 'login.php';
+                    window.location = 'login';
                     return;
                 }
                 var mensagem = 'Não foi possível carregar os dados.';

@@ -121,7 +121,7 @@
                     echo $somente_consultor ? '.' : ', pelo consultor atual do precatório.'; ?>
                 </p>
             </div>
-            <a href="oxigenacao.php" class="btn btn-primary">
+            <a href="oxigenacao" class="btn btn-primary">
                 <i class="fa fa-line-chart" aria-hidden="true"></i> Abrir Painel de Oxigenação
             </a>
         </div>
@@ -155,7 +155,7 @@
                     Mesmos números do Painel de Prospecção com todos esses entes selecionados e nenhum outro filtro.
                 </p>
             </div>
-            <a href="prospeccao.php" class="btn btn-primary">
+            <a href="prospeccao" class="btn btn-primary">
                 <i class="fa fa-bar-chart" aria-hidden="true"></i> Abrir Painel de Prospecção
             </a>
         </div>

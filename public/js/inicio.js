@@ -58,7 +58,7 @@
     function mensagemDeErro(xhr) {
         // Sessão expirada: a API responde 401 e o usuário volta ao login.
         if (xhr.status === 401) {
-            window.location = 'login.php';
+            window.location = 'login';
         }
         if (xhr.responseJSON && xhr.responseJSON.erro) {
             return xhr.responseJSON.erro;
@@ -67,7 +67,7 @@
     }
 
     function buscar(acao, aoCarregar, aoFalhar) {
-        $.getJSON('api/inicio.php', { acao: acao })
+        $.getJSON('api/inicio', { acao: acao })
             .done(function (resposta) {
                 if (!resposta.ok) {
                     aoFalhar(resposta.erro || 'Não foi possível carregar os dados.');

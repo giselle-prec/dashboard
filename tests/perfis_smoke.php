@@ -114,18 +114,18 @@ echo "Menu\n";
 
 logar_como(AUTH_PERFIL_ADMIN, 1, 'uploads/foto.png');
 $html = renderizar_menu();
-verificar('perfil 1 vê "Informações Batch" no menu', strpos($html, 'batch.php') !== false);
+verificar('perfil 1 vê "Informações Batch" no menu', strpos($html, 'href="batch"') !== false);
 verificar('foto aparece nos dois avatares',
     substr_count($html, '<img src="https://precapp.net/uploads/foto.png"') === 2);
 verificar('ícone continua por baixo da foto', substr_count($html, 'fa fa-user') === 2);
 
 logar_como(AUTH_PERFIL_CONSULTOR, 10);
 $html = renderizar_menu('prospeccao');
-verificar('consultor não vê "Informações Batch" no menu', strpos($html, 'batch.php') === false);
+verificar('consultor não vê "Informações Batch" no menu', strpos($html, 'href="batch"') === false);
 verificar('consultor vê os painéis e as tabelas',
-    strpos($html, 'prospeccao.php') !== false && strpos($html, 'oxigenacao.php') !== false
-    && strpos($html, 'precabot.php') !== false && strpos($html, 'tjrj.php') !== false);
-verificar('seção "Menu" continua com o Início', strpos($html, '>Menu<') !== false && strpos($html, 'index.php') !== false);
+    strpos($html, 'href="prospeccao"') !== false && strpos($html, 'href="oxigenacao"') !== false
+    && strpos($html, 'href="precabot"') !== false && strpos($html, 'href="tjrj"') !== false);
+verificar('seção "Menu" continua com o Início', strpos($html, '>Menu<') !== false && strpos($html, 'href="./"') !== false);
 verificar('sem foto, só o ícone', strpos($html, '<img src="https://precapp.net') === false
     && substr_count($html, 'fa fa-user') === 2);
 

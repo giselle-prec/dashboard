@@ -63,7 +63,7 @@
 
     function mensagemDeFalha(xhr) {
         if (xhr.status === 401) {
-            window.location = 'login.php';
+            window.location = 'login';
             return null;
         }
         if (xhr.responseJSON && xhr.responseJSON.erro) {
@@ -113,7 +113,7 @@
     }
 
     function carregarEntes() {
-        $.ajax({ url: 'api/tjrj.php', method: 'GET', dataType: 'json', data: { acao: 'entes' } })
+        $.ajax({ url: 'api/tjrj', method: 'GET', dataType: 'json', data: { acao: 'entes' } })
             .done(function (resposta) {
                 var $select = $('#ente_id').empty()
                     .append($('<option>', { value: '', text: 'Selecione um Ente', selected: true, disabled: true }));
@@ -145,7 +145,7 @@
         $('#carregando').removeClass('d-none');
 
         $.ajax({
-            url: 'api/tjrj.php',
+            url: 'api/tjrj',
             method: 'GET',
             dataType: 'json',
             data: { acao: 'precatorios', ente_id: enteId, ordem: ordem }

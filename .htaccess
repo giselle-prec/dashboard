@@ -1,0 +1,60 @@
+# URLs amigáveis do painel. Este arquivo fica na pasta publicada
+# (precapp.net/plus/), ao lado de public/ e src/.
+#
+#   Endereço                Arquivo servido
+#   /plus/                  public/index.php
+#   /plus/prospeccao        public/prospeccao.php
+#   /plus/api/inicio        public/api/inicio.php
+#   /plus/css/main.css      public/css/main.css
+#
+# Os endereços antigos (/plus/public/index.php, /plus/prospeccao.php...) são
+# redirecionados para os novos, então favoritos e links salvos continuam
+# funcionando. As regras não citam "/plus/": funcionam em qualquer pasta.
+#
+# Só o conteúdo de public/ é servido: src/, docs/ e tests/ ficam fora da web.
+#
+# O servidor embutido do PHP (php -S) não lê este arquivo; para testar
+# localmente use public/router.php, que repete estas regras.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # --- 1. Endereço antigo → novo (redirecionamento 301) --------------------
+    # As regras olham THE_REQUEST, a linha que o navegador enviou, e não o
+    # caminho já reescrito pela parte 2: assim um endereço novo nunca é
+    # redirecionado de novo (sem laço). Só GET/HEAD: um POST redirecionado
+    # chega como GET e perde os dados do formulário.
+
+    # /plus/public/, /plus/public/index.php, /plus/index.php → /plus/
+    RewriteCond %{THE_REQUEST} ^(?:GET|HEAD)\s(/[^?\s]*?/)(?:public/?|(?:public/)?index(?:\.php)?)[\s?]
+    RewriteRule ^ %1 [R=301,NE,L]
+
+    # /plus/public/prospeccao.php → /plus/prospeccao
+    # /plus/public/css/main.css   → /plus/css/main.css
+    RewriteCond %{THE_REQUEST} ^(?:GET|HEAD)\s(/[^?\s]*?/)public/([^?\s]*?)(?:\.php)?[\s?]
+    RewriteRule ^ %1%2 [R=301,NE,L]
+
+    # /plus/prospeccao.php → /plus/prospeccao
+    RewriteCond %{THE_REQUEST} ^(?:GET|HEAD)\s(/[^?\s]*?)\.php[\s?]
+    RewriteRule ^ %1 [R=301,NE,L]
+
+    # --- 2. Endereço novo → arquivo em public/ (interno, invisível) ----------
+
+    # Página que não existe (/plus/xyz): mostra a 404 do painel. Só para nomes
+    # de um nível: em /plus/a/b os links relativos da página quebrariam.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^public/[^/]+\.php$ public/404.php [L]
+
+    # Já aponta para public/ (segunda passada destas regras, ou POST num
+    # endereço antigo): segue sem mexer.
+    RewriteRule ^public/ - [L]
+
+    # /plus/ → Início
+    RewriteRule ^$ public/index.php [L]
+
+    # Com extensão (css, js, imagens) → o mesmo arquivo dentro de public/
+    RewriteRule ^(.*\.[^/]*)$ public/$1 [L]
+
+    # Sem extensão → página PHP (prospeccao, valida_login, api/inicio...)
+    RewriteRule ^(.+)$ public/$1.php [L]
+</IfModule>

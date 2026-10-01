@@ -471,7 +471,7 @@
         var filtros = coletarFiltros();
 
         $.ajax({
-            url: 'api/prospeccao.php',
+            url: 'api/prospeccao',
             method: 'POST',
             dataType: 'json',
             data: filtros
@@ -497,7 +497,7 @@
             })
             .fail(function (xhr) {
                 if (xhr.status === 401) {
-                    window.location = 'login.php';
+                    window.location = 'login';
                     return;
                 }
                 var mensagem = 'Não foi possível carregar os dados.';
