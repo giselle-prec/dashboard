@@ -14,16 +14,26 @@ const AUTH_PERFIL_CONSULTOR = 2;
 // "uploads/31012024145502zyro-image.png").
 const AUTH_URL_BASE_FOTO = 'https://precapp.net/';
 
+// Se o navegador chegou por https. Em hospedagem com proxy na frente, o PHP
+// recebe a requisição em http e o https original vem nos cabeçalhos
+// X-Forwarded-*.
+function auth_conexao_segura() {
+    if (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') {
+        return true;
+    }
+    return strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'
+        || strtolower($_SERVER['HTTP_X_FORWARDED_SSL'] ?? '') === 'on';
+}
+
 function auth_iniciar_sessao() {
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
 
-    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
     session_set_cookie_params([
         'lifetime' => 0,
         'path'     => '/',
-        'secure'   => $https,
+        'secure'   => auth_conexao_segura(),
         'httponly' => true,
         'samesite' => 'Lax',
     ]);

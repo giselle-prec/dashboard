@@ -7,6 +7,8 @@
 #   /plus/api/inicio        public/api/inicio.php
 #   /plus/css/main.css      public/css/main.css
 #
+# Quem abre por http vai para o mesmo endereço em https (menos no localhost).
+#
 # Os endereços antigos (/plus/public/index.php, /plus/prospeccao.php...) são
 # redirecionados para os novos, então favoritos e links salvos continuam
 # funcionando. As regras não citam "/plus/": funcionam em qualquer pasta.
@@ -18,6 +20,26 @@
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    # Sem isto o Apache pula estas regras para /plus (pasta sem a barra
+    # final); ver "Pasta sem a barra final" abaixo.
+    RewriteOptions AllowNoSlash
+
+    # --- 0. Sempre https -----------------------------------------------------
+    # Em hospedagem com proxy na frente, o Apache recebe tudo em http e o https
+    # original vem em X-Forwarded-Proto / X-Forwarded-SSL: contam como https,
+    # senão o https voltaria para http (ou entraria em laço). localhost fica de
+    # fora: o Apache local não tem certificado.
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+    RewriteCond %{HTTP:X-Forwarded-SSL} !=on [NC]
+    RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:\d+)?$ [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+    # Esquema dos redirecionamentos abaixo: https, menos no localhost. Dito por
+    # extenso porque, atrás de proxy, o Apache montaria o endereço com http.
+    RewriteRule ^ - [E=ESQUEMA:https]
+    RewriteCond %{HTTP_HOST} ^(localhost|127\.0\.0\.1)(:\d+)?$ [NC]
+    RewriteRule ^ - [E=ESQUEMA:http]
 
     # --- 1. Endereço antigo → novo (redirecionamento 301) --------------------
     # As regras olham THE_REQUEST, a linha que o navegador enviou, e não o
@@ -27,16 +49,22 @@
 
     # /plus/public/, /plus/public/index.php, /plus/index.php → /plus/
     RewriteCond %{THE_REQUEST} ^(?:GET|HEAD)\s(/[^?\s]*?/)(?:public/?|(?:public/)?index(?:\.php)?)[\s?]
-    RewriteRule ^ %1 [R=301,NE,L]
+    RewriteRule ^ %{ENV:ESQUEMA}://%{HTTP_HOST}%1 [R=301,NE,L]
 
     # /plus/public/prospeccao.php → /plus/prospeccao
     # /plus/public/css/main.css   → /plus/css/main.css
     RewriteCond %{THE_REQUEST} ^(?:GET|HEAD)\s(/[^?\s]*?/)public/([^?\s]*?)(?:\.php)?[\s?]
-    RewriteRule ^ %1%2 [R=301,NE,L]
+    RewriteRule ^ %{ENV:ESQUEMA}://%{HTTP_HOST}%1%2 [R=301,NE,L]
 
     # /plus/prospeccao.php → /plus/prospeccao
     RewriteCond %{THE_REQUEST} ^(?:GET|HEAD)\s(/[^?\s]*?)\.php[\s?]
-    RewriteRule ^ %1 [R=301,NE,L]
+    RewriteRule ^ %{ENV:ESQUEMA}://%{HTTP_HOST}%1 [R=301,NE,L]
+
+    # Pasta sem a barra final (/plus) → com barra, já no esquema certo. Sem
+    # isso o Apache faria esse redirecionamento sozinho, em http.
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteCond %{REQUEST_URI} !/$
+    RewriteRule ^ %{ENV:ESQUEMA}://%{HTTP_HOST}%{REQUEST_URI}/ [R=301,L]
 
     # --- 2. Endereço novo → arquivo em public/ (interno, invisível) ----------
 

@@ -52,7 +52,7 @@
                                 required>
                         </div>
                         <p class="text-center mt-3">
-                            Entre com suas credenciais de acesso do nosso sistema (Precabot - http://precapp.net/)
+                            Entre com suas credenciais de acesso do nosso sistema (Precabot - https://precapp.net/)
                         </p>
                         <button type="submit" class="btn btn-primary w-100">Entrar</button>
                     </form>

@@ -109,6 +109,28 @@ foreach ($casos as $c) {
 }
 
 // ---------------------------------------------------------------------------
+echo "Conexão segura (cookie de sessão Secure)\n";
+// ---------------------------------------------------------------------------
+
+$casos = [
+    ['http direto não é seguro',          [],                                         false],
+    ['HTTPS=off não é seguro',            ['HTTPS' => 'off'],                         false],
+    ['HTTPS=on é seguro',                 ['HTTPS' => 'on'],                          true],
+    ['proxy com X-Forwarded-Proto https', ['HTTP_X_FORWARDED_PROTO' => 'https'],      true],
+    ['proxy com X-Forwarded-Proto http',  ['HTTP_X_FORWARDED_PROTO' => 'http'],       false],
+    ['proxy com X-Forwarded-SSL on',      ['HTTP_X_FORWARDED_SSL' => 'on'],           true],
+];
+$servidor_original = $_SERVER;
+foreach ($casos as $c) {
+    list($descricao, $cabecalhos, $esperado) = $c;
+    $_SERVER = $servidor_original;
+    unset($_SERVER['HTTPS'], $_SERVER['HTTP_X_FORWARDED_PROTO'], $_SERVER['HTTP_X_FORWARDED_SSL']);
+    $_SERVER = array_merge($_SERVER, $cabecalhos);
+    verificar($descricao, auth_conexao_segura() === $esperado);
+}
+$_SERVER = $servidor_original;
+
+// ---------------------------------------------------------------------------
 echo "Menu\n";
 // ---------------------------------------------------------------------------
 
