@@ -1,4 +1,15 @@
 <?php
+    // php -S sem o router.php: o servidor embutido manda para cá todo endereço
+    // que não existe (/login, /prospeccao...) e a guarda redirecionaria para
+    // "login" sem parar. Em vez disso, mostra o comando certo.
+    if (PHP_SAPI === 'cli-server' && !function_exists('roteador_resolver')) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "Rode o servidor com o roteador, dentro de public/:\n\n"
+           . "    php -S {$_SERVER['SERVER_NAME']}:{$_SERVER['SERVER_PORT']} router.php\n";
+        exit;
+    }
+
     $rota = 'index';
     require __DIR__ . '/../src/guarda.php';
     require __DIR__ . '/../src/inicio_repository.php';
@@ -121,7 +132,7 @@
                     echo $somente_consultor ? '.' : ', pelo consultor atual do precatório.'; ?>
                 </p>
             </div>
-            <a href="oxigenacao.php" class="btn btn-primary">
+            <a href="oxigenacao" class="btn btn-primary">
                 <i class="fa fa-line-chart" aria-hidden="true"></i> Abrir Painel de Oxigenação
             </a>
         </div>
@@ -155,7 +166,7 @@
                     Mesmos números do Painel de Prospecção com todos esses entes selecionados e nenhum outro filtro.
                 </p>
             </div>
-            <a href="prospeccao.php" class="btn btn-primary">
+            <a href="prospeccao" class="btn btn-primary">
                 <i class="fa fa-bar-chart" aria-hidden="true"></i> Abrir Painel de Prospecção
             </a>
         </div>

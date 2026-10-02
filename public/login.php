@@ -27,7 +27,7 @@
                         <div class="alert alert-danger" role="alert"><?php echo htmlspecialchars($erro); ?></div>
                     <?php endif; ?>
 
-                    <form action="valida_login.php" method="post" name="login">
+                    <form action="valida_login" method="post" name="login">
                         <div class="form-group">
                             <label for="email">E-mail</label>
                             <input
@@ -52,7 +52,7 @@
                                 required>
                         </div>
                         <p class="text-center mt-3">
-                            Entre com suas credenciais de acesso do nosso sistema (Precabot - http://precapp.net/)
+                            Entre com suas credenciais de acesso do nosso sistema (Precabot - https://precapp.net/)
                         </p>
                         <button type="submit" class="btn btn-primary w-100">Entrar</button>
                     </form>

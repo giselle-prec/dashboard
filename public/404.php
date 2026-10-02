@@ -13,7 +13,7 @@
     <div class="error-card-custom">
         <h1 class="error-title-huge">4<img src="img/logo-precapp.svg" alt="0">4</h1>
         <p>A página que você procurou não existe.</p>
-        <a href="index.php" class="btn btn-primary">Voltar ao início</a>
+        <a href="./" class="btn btn-primary">Voltar ao início</a>
     </div>
 </div>
 <?php require __DIR__ . '/templates/scripts.php' ?>

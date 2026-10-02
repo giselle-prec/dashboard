@@ -4,16 +4,16 @@
     $menu_rota_atual = $rota ?? '';
     $menu_secoes = [
         'Menu' => [
-            ['rota' => 'index',      'href' => 'index.php',      'icone' => 'fa-home',       'texto' => 'Início'],
-            ['rota' => 'batch',      'href' => 'batch.php',      'icone' => 'fa-upload',     'texto' => 'Informações Batch'],
+            ['rota' => 'index',      'href' => './',             'icone' => 'fa-home',       'texto' => 'Início'],
+            ['rota' => 'batch',      'href' => 'batch',          'icone' => 'fa-upload',     'texto' => 'Informações Batch'],
         ],
         'Painéis' => [
-            ['rota' => 'prospeccao', 'href' => 'prospeccao.php', 'icone' => 'fa-bar-chart',  'texto' => 'Painel de Prospecção'],
-            ['rota' => 'oxigenacao', 'href' => 'oxigenacao.php', 'icone' => 'fa-line-chart', 'texto' => 'Painel de Oxigenação'],
+            ['rota' => 'prospeccao', 'href' => 'prospeccao',     'icone' => 'fa-bar-chart',  'texto' => 'Painel de Prospecção'],
+            ['rota' => 'oxigenacao', 'href' => 'oxigenacao',     'icone' => 'fa-line-chart', 'texto' => 'Painel de Oxigenação'],
         ],
         'Tabelas' => [
-            ['rota' => 'precabot',   'href' => 'precabot.php',   'icone' => 'fa-table',      'texto' => 'Tabela do Sistema (Precabot)'],
-            ['rota' => 'tjrj',       'href' => 'tjrj.php',       'icone' => 'fa-university', 'texto' => 'Tabela do Site do TJRJ'],
+            ['rota' => 'precabot',   'href' => 'precabot',       'icone' => 'fa-table',      'texto' => 'Tabela do Sistema (Precabot)'],
+            ['rota' => 'tjrj',       'href' => 'tjrj',           'icone' => 'fa-university', 'texto' => 'Tabela do Site do TJRJ'],
         ],
     ];
     // Só entram os itens que o perfil logado pode abrir (src/rotas.php); uma
@@ -40,7 +40,7 @@
     try { if (localStorage.getItem('precapp.sidebarMinimizado') === '1') document.body.classList.add('sidebar-minimized'); } catch (e) {}
 </script>
 <aside class="sidebar-wrapper" id="sidebar">
-    <a href="index.php" class="sidebar-brand">
+    <a href="./" class="sidebar-brand">
         <img src="img/logo-precapp.svg" alt="" class="sidebar-brand-logo">
         <span>Precapp</span>
     </a>
@@ -73,7 +73,7 @@
             <div class="sidebar-profile-name">Usuário</div>
             <div class="sidebar-profile-email" title="<?php echo $menu_usuario; ?>"><?php echo $menu_usuario; ?></div>
         </div>
-        <a href="logout.php" class="sidebar-profile-sair" title="Sair" aria-label="Sair">
+        <a href="logout" class="sidebar-profile-sair" title="Sair" aria-label="Sair">
             <i class="fa fa-sign-out" aria-hidden="true"></i>
         </a>
     </div>
@@ -103,7 +103,7 @@
             </button>
             <ul class="dropdown-menu dropdown-menu-end dropdown-menu-profile" aria-labelledby="profile-dropdown">
                 <li class="dropdown-header">Bem-vindo(a)!</li>
-                <li><a class="dropdown-item text-danger" href="logout.php"><i class="fa fa-sign-out" aria-hidden="true"></i> Sair</a></li>
+                <li><a class="dropdown-item text-danger" href="logout"><i class="fa fa-sign-out" aria-hidden="true"></i> Sair</a></li>
             </ul>
         </div>
     </div>

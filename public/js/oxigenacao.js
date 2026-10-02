@@ -55,7 +55,7 @@
     function erroDaResposta(xhr) {
         // Sessão expirada: a API responde 401 e o usuário volta ao login.
         if (xhr.status === 401) {
-            window.location = 'login.php';
+            window.location = 'login';
         }
         if (xhr.responseJSON && xhr.responseJSON.erro) {
             return xhr.responseJSON.erro;
@@ -520,7 +520,7 @@
         filtros.data_inicio = $('#data_inicio').val();
         filtros.data_fim = $('#data_fim').val();
 
-        $.getJSON('api/oxigenacao.php', filtros)
+        $.getJSON('api/oxigenacao', filtros)
             .done(function (resposta) {
                 if (!resposta.ok) {
                     mostrarErro(resposta.erro || 'Não foi possível carregar os dados.');
@@ -792,7 +792,7 @@
             filtros.somente_pendentes = 1;
         }
 
-        $.getJSON('api/oxigenacao.php', filtros)
+        $.getJSON('api/oxigenacao', filtros)
             .done(function (resposta) {
                 if (!resposta.ok) {
                     mostrarErro(resposta.erro || 'Não foi possível carregar os dados.');
